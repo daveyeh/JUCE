@@ -3508,7 +3508,7 @@ JUCE_API void JUCE_CALLTYPE Process::hide() {}
 void Desktop::setKioskComponent (Component* comp, bool enableOrDisable, bool /* allowMenusAndBars */)
 {
     if (enableOrDisable)
-        comp->setBounds (getDisplays().getMainDisplay().totalArea);
+        comp->setBounds (getDisplays().findDisplayForRect (comp->getScreenBounds()).totalArea);
 }
 
 void Desktop::allowedOrientationsChanged() {}
@@ -4093,6 +4093,7 @@ void* MouseCursor::createStandardMouseCursor (MouseCursor::StandardCursorType ty
             return CustomMouseCursorInfo (ImageFileFormat::loadFrom (copyCursorData, copyCursorSize), { 1, 3 }).create();
         }
 
+        case NumStandardCursorTypes:
         default:
             jassertfalse;
             return None;
