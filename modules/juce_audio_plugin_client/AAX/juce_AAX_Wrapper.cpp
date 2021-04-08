@@ -1234,8 +1234,9 @@ namespace AAXClasses
                     for (int i = 0; i < numIns; ++i)
                         memcpy (channels[i], getAudioBufferForInput (inputs, sidechain, mainNumIns, i), (size_t) bufferSize * sizeof (float));
 
-                    for (int i = numIns; i < numOuts; ++i)
-                        zeromem (channels[i], (size_t) bufferSize * sizeof (float));
+                    // this mutes incoming sidechain channels when using multi out
+//                    for (int i = numIns; i < numOuts; ++i)
+//                        zeromem (channels[i], (size_t) bufferSize * sizeof (float));
 
                     process (channels, numOuts, bufferSize, bypass, midiNodeIn, midiNodesOut);
                 }
