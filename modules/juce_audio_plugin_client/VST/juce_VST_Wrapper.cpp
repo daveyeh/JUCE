@@ -105,6 +105,7 @@ using namespace juce;
 
 #include "../utility/juce_FakeMouseMoveGenerator.h"
 #include "../utility/juce_WindowsHooks.h"
+#include "../utility/juce_LinuxMessageThread.h"
 
 #include <juce_audio_processors/format_types/juce_LegacyAudioParameter.cpp>
 #include <juce_audio_processors/format_types/juce_VSTCommon.h>
@@ -184,53 +185,11 @@ namespace
         return w;
     }
 
+    static int numActivePlugins = 0;
     static bool messageThreadIsDefinitelyCorrect = false;
 }
 
-//==============================================================================
-#elif JUCE_LINUX
-
-struct SharedMessageThread  : public Thread
-{
-    SharedMessageThread()  : Thread ("VstMessageThread")
-    {
-        startThread (7);
-
-        while (! initialised)
-            sleep (1);
-    }
-
-    ~SharedMessageThread() override
-    {
-        signalThreadShouldExit();
-        JUCEApplicationBase::quit();
-        waitForThreadToExit (5000);
-        clearSingletonInstance();
-    }
-
-    void run() override
-    {
-        initialiseJuce_GUI();
-        initialised = true;
-
-        MessageManager::getInstance()->setCurrentThreadAsMessageThread();
-
-        XWindowSystem::getInstance();
-
-        while ((! threadShouldExit()) && MessageManager::getInstance()->runDispatchLoopUntil (250))
-        {}
-    }
-
-    JUCE_DECLARE_SINGLETON (SharedMessageThread, false)
-
-    bool initialised = false;
-};
-
-JUCE_IMPLEMENT_SINGLETON (SharedMessageThread)
-
 #endif
-
-static Array<void*> activePlugins;
 
 //==============================================================================
 // Ableton Live host specific commands
@@ -356,44 +315,35 @@ public:
             vstEffect.flags |= Vst2::effFlagsNoSoundInStop;
        #endif
 
-        activePlugins.add (this);
+       #if JUCE_WINDOWS
+        ++numActivePlugins;
+       #endif
     }
 
     ~JuceVSTWrapper() override
     {
         JUCE_AUTORELEASEPOOL
         {
-            {
-               #if JUCE_LINUX
-                MessageManagerLock mmLock;
-               #endif
-                stopTimer();
-                deleteEditor (false);
+           #if JUCE_LINUX || JUCE_BSD
+            MessageManagerLock mmLock;
+           #endif
 
-                hasShutdown = true;
+            stopTimer();
+            deleteEditor (false);
 
-                delete processor;
-                processor = nullptr;
+            hasShutdown = true;
 
-                jassert (editorComp == nullptr);
+            delete processor;
+            processor = nullptr;
 
-                deleteTempChannels();
+            jassert (editorComp == nullptr);
 
-                jassert (activePlugins.contains (this));
-                activePlugins.removeFirstMatchingValue (this);
-            }
+            deleteTempChannels();
 
-            if (activePlugins.size() == 0)
-            {
-               #if JUCE_LINUX
-                SharedMessageThread::deleteInstance();
-               #endif
-                shutdownJuce_GUI();
-
-               #if JUCE_WINDOWS
+           #if JUCE_WINDOWS
+            if (--numActivePlugins == 0)
                 messageThreadIsDefinitelyCorrect = false;
-               #endif
-            }
+           #endif
         }
     }
 
@@ -433,8 +383,6 @@ public:
        #if JUCE_DEBUG && ! (JucePlugin_ProducesMidiOutput || JucePlugin_IsMidiEffect)
         const int numMidiEventsComingIn = midiEvents.getNumEvents();
        #endif
-
-        jassert (activePlugins.contains (this));
 
         {
             const int numIn  = processor->getTotalNumInputChannels();
@@ -1066,11 +1014,11 @@ public:
         {
             setVisible (false);
 
-           #if JUCE_WINDOWS || JUCE_LINUX
+           #if JUCE_WINDOWS || JUCE_LINUX || JUCE_BSD
             addToDesktop (0, args.ptr);
             hostWindow = (HostWindowType) args.ptr;
 
-            #if JUCE_LINUX
+            #if JUCE_LINUX || JUCE_BSD
              X11Symbols::getInstance()->xReparentWindow (display,
                                                          (Window) getWindowHandle(),
                                                          (HostWindowType) hostWindow,
@@ -1174,7 +1122,7 @@ public:
                 {
                     const ScopedValueSetter<bool> resizingParentSetter (resizingParent, true);
 
-                   #if JUCE_LINUX // setSize() on linux causes renoise and energyxt to fail.
+                   #if JUCE_LINUX || JUCE_BSD // setSize() on linux causes renoise and energyxt to fail.
                     auto rect = convertToHostBounds ({ 0, 0, (int16) editorBounds.getHeight(), (int16) editorBounds.getWidth() });
 
                     X11Symbols::getInstance()->xResizeWindow (display, (Window) getWindowHandle(),
@@ -1219,7 +1167,7 @@ public:
 
                #if JUCE_MAC
                 setNativeHostWindowSizeVST (hostWindow, this, newWidth, newHeight, wrapper.useNSView);
-               #elif JUCE_LINUX
+               #elif JUCE_LINUX || JUCE_BSD
                 // (Currently, all linux hosts support sizeWindow, so this should never need to happen)
                 setSize (newWidth, newHeight);
                #else
@@ -1355,7 +1303,7 @@ public:
         float editorScaleFactor = 1.0f;
         juce::Rectangle<int> lastBounds;
 
-       #if JUCE_LINUX
+       #if JUCE_LINUX || JUCE_BSD
         using HostWindowType = ::Window;
         ::Display* display = XWindowSystem::getInstance()->getDisplay();
        #elif JUCE_WINDOWS
@@ -2084,6 +2032,12 @@ private:
     }
 
     //==============================================================================
+    ScopedJuceInitialiser_GUI libraryInitialiser;
+
+   #if JUCE_LINUX || JUCE_BSD
+    SharedResourcePointer<MessageThread> messageThread;
+   #endif
+
     Vst2::audioMasterCallback hostCallback;
     AudioProcessor* processor = {};
     double sampleRate = 44100.0;
@@ -2136,13 +2090,17 @@ namespace
     {
         JUCE_AUTORELEASEPOOL
         {
-            initialiseJuce_GUI();
+            ScopedJuceInitialiser_GUI libraryInitialiser;
+
+           #if JUCE_LINUX || JUCE_BSD
+            SharedResourcePointer<MessageThread> messageThread;
+           #endif
 
             try
             {
                 if (audioMaster (nullptr, Vst2::audioMasterVersion, 0, 0, nullptr, 0) != 0)
                 {
-                   #if JUCE_LINUX
+                   #if JUCE_LINUX || JUCE_BSD
                     MessageManagerLock mmLock;
                    #endif
 
@@ -2197,14 +2155,13 @@ namespace
 
 //==============================================================================
 // Linux startup code..
-#elif JUCE_LINUX
+#elif JUCE_LINUX || JUCE_BSD
 
     JUCE_EXPORTED_FUNCTION Vst2::AEffect* VSTPluginMain (Vst2::audioMasterCallback audioMaster);
     JUCE_EXPORTED_FUNCTION Vst2::AEffect* VSTPluginMain (Vst2::audioMasterCallback audioMaster)
     {
         PluginHostType::jucePlugInClientCurrentWrapperType = AudioProcessor::wrapperType_VST;
 
-        SharedMessageThread::getInstance();
         return pluginEntryPoint (audioMaster);
     }
 
