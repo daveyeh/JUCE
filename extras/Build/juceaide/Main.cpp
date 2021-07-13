@@ -248,7 +248,8 @@ juce::build_tools::PlistOptions parsePlistOptions (const juce::File& file,
     updateField ("SHOULD_ADD_STORYBOARD",                result.shouldAddStoryboardToProject);
     updateField ("LAUNCH_STORYBOARD_FILE",               result.storyboardName);
     updateField ("PROJECT_NAME",                         result.projectName);
-    updateField ("VERSION",                              result.version);
+    updateField ("VERSION",                              result.marketingVersion);
+    updateField ("BUILD_VERSION",                        result.currentProjectVersion);
     updateField ("COMPANY_COPYRIGHT",                    result.companyCopyright);
     updateField ("DOCUMENT_EXTENSIONS",                  result.documentExtensions);
     updateField ("FILE_SHARING_ENABLED",                 result.fileSharingEnabled);
@@ -274,7 +275,7 @@ juce::build_tools::PlistOptions parsePlistOptions (const juce::File& file,
     updateField ("ICON_FILE",                            result.iconFile);
 
     result.type = type;
-    result.versionAsHex = juce::build_tools::getVersionAsHexInteger (result.version);
+    result.versionAsHex = juce::build_tools::getVersionAsHexInteger (result.marketingVersion);
 
     if (result.storyboardName.isNotEmpty())
         result.storyboardName = result.storyboardName.fromLastOccurrenceOf ("/", false, false)
@@ -505,7 +506,7 @@ int main (int argc, char** argv)
         juce::ArgumentList argumentList { arguments.front(),
                                           juce::StringArray (arguments.data() + 1, (int) arguments.size() - 1) };
 
-        using Fn = typename std::add_lvalue_reference<decltype (writeBinaryData)>::type;
+        using Fn = std::add_lvalue_reference<decltype (writeBinaryData)>::type;
 
         const std::unordered_map<juce::String, Fn> commands
         {

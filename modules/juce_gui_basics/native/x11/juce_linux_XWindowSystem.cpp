@@ -23,8 +23,6 @@
   ==============================================================================
 */
 
-#include <unordered_map>
-
 namespace juce
 {
 
@@ -3617,7 +3615,6 @@ void XWindowSystem::handleClientMessageEvent (LinuxComponentPeer* peer, XClientM
     else if (clientMsg.message_type == atoms.XdndLeave)
     {
         dragAndDropStateMap[peer].handleDragAndDropExit();
-        dragAndDropStateMap.erase (peer);
     }
     else if (clientMsg.message_type == atoms.XdndPosition)
     {

@@ -534,6 +534,7 @@ public:
                 }
 
                 bool isUsingEditAndContinue = false;
+                const auto pdbFilename = getOwner().getIntDirFile (config, config.getOutputFilename (".pdb", true, type == UnityPlugIn));
 
                 {
                     auto* cl = group->createNewChildElement ("ClCompile");
@@ -559,7 +560,7 @@ public:
                     cl->createNewChildElement ("PrecompiledHeader")->addTextElement ("NotUsing");
                     cl->createNewChildElement ("AssemblerListingLocation")->addTextElement ("$(IntDir)\\");
                     cl->createNewChildElement ("ObjectFileName")->addTextElement ("$(IntDir)\\");
-                    cl->createNewChildElement ("ProgramDataBaseFileName")->addTextElement ("$(IntDir)\\");
+                    cl->createNewChildElement ("ProgramDataBaseFileName")->addTextElement (pdbFilename);
                     cl->createNewChildElement ("WarningLevel")->addTextElement ("Level" + String (config.getWarningLevel()));
                     cl->createNewChildElement ("SuppressStartupBanner")->addTextElement ("true");
                     cl->createNewChildElement ("MultiProcessorCompilation")->addTextElement (config.shouldUseMultiProcessorCompilation() ? "true" : "false");
@@ -575,10 +576,6 @@ public:
                         cl->createNewChildElement ("TreatWarningAsError")->addTextElement ("true");
 
                     auto cppStandard = owner.project.getCppStandardString();
-
-                    if (cppStandard == "11") // VS doesn't support the C++11 flag so we have to bump it to C++14
-                        cppStandard = "14";
-
                     cl->createNewChildElement ("LanguageStandard")->addTextElement ("stdcpp" + cppStandard);
                 }
 
@@ -605,7 +602,7 @@ public:
                     link->createNewChildElement ("IgnoreSpecificDefaultLibraries")->addTextElement (isDebug ? "libcmt.lib; msvcrt.lib;;%(IgnoreSpecificDefaultLibraries)"
                                                                                                             : "%(IgnoreSpecificDefaultLibraries)");
                     link->createNewChildElement ("GenerateDebugInformation")->addTextElement ((isDebug || config.shouldGenerateDebugSymbols()) ? "true" : "false");
-                    link->createNewChildElement ("ProgramDatabaseFile")->addTextElement (getOwner().getIntDirFile (config, config.getOutputFilename (".pdb", true, type == UnityPlugIn)));
+                    link->createNewChildElement ("ProgramDatabaseFile")->addTextElement (pdbFilename);
                     link->createNewChildElement ("SubSystem")->addTextElement (type == ConsoleApp ? "Console" : "Windows");
 
                     if (! config.is64Bit())
@@ -843,6 +840,17 @@ public:
                     if (projectItem.shouldBeCompiled())
                     {
                         auto extraCompilerFlags = owner.compilerFlagSchemesMap[projectItem.getCompilerFlagSchemeString()].get().toString();
+
+                        if (shouldAddBigobjFlag (path))
+                        {
+                            const String bigobjFlag ("/bigobj");
+
+                            if (! extraCompilerFlags.contains (bigobjFlag))
+                            {
+                                extraCompilerFlags << " " << bigobjFlag;
+                                extraCompilerFlags.trim();
+                            }
+                        }
 
                         if (extraCompilerFlags.isNotEmpty())
                             e->createNewChildElement ("AdditionalOptions")->addTextElement (extraCompilerFlags + " %(AdditionalOptions)");
@@ -1726,6 +1734,11 @@ protected:
     static bool shouldUseStdCall (const build_tools::RelativePath& path)
     {
         return path.getFileNameWithoutExtension().startsWithIgnoreCase ("include_juce_audio_plugin_client_RTAS_");
+    }
+
+    static bool shouldAddBigobjFlag (const build_tools::RelativePath& path)
+    {
+        return path.getFileNameWithoutExtension().equalsIgnoreCase ("include_juce_gui_basics");
     }
 
     StringArray getModuleLibs() const

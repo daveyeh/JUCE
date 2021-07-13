@@ -55,11 +55,13 @@
 #include <limits>
 #include <list>
 #include <map>
+#include <unordered_map>
 #include <memory>
 #include <mutex>
 #include <numeric>
 #include <queue>
 #include <sstream>
+#include <typeindex>
 #include <unordered_set>
 #include <vector>
 

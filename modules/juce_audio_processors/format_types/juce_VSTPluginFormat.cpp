@@ -1250,6 +1250,20 @@ struct VSTPluginInstance     : public AudioPluginInstance,
         setLatencySamples (vstEffect->initialDelay);
     }
 
+    void getExtensions (ExtensionsVisitor& visitor) const override
+    {
+        struct Extensions : public ExtensionsVisitor::VSTClient
+        {
+            explicit Extensions (const VSTPluginInstance* instanceIn) : instance (instanceIn) {}
+
+            void* getAEffectPtr() const noexcept override   { return instance->vstEffect; }
+
+            const VSTPluginInstance* instance = nullptr;
+        };
+
+        visitor.visitVSTClient (Extensions { this });
+    }
+
     void* getPlatformSpecificData() override    { return vstEffect; }
 
     const String getName() const override
@@ -1964,6 +1978,21 @@ struct VSTPluginInstance     : public AudioPluginInstance,
         return false;
     }
 
+    bool updateSizeFromEditor (int w, int h)
+    {
+        editorSize = { w, h };
+
+        if (auto* editor = getActiveEditor())
+        {
+            editor->setSize (w, h);
+            return true;
+        }
+
+        return false;
+    }
+
+    Rectangle<int> getEditorSize() const { return editorSize; }
+
     Vst2::AEffect* vstEffect;
     ModuleHandle::Ptr vstModule;
 
@@ -2042,6 +2071,7 @@ private:
     AudioBuffer<double> tmpBufferDouble;
     HeapBlock<double*> channelBufferDouble;
     std::unique_ptr<VST2BypassParameter> bypassParam;
+    Rectangle<int> editorSize;
 
     std::unique_ptr<VSTXMLInfo> xmlInfo;
 
@@ -2116,13 +2146,13 @@ private:
             if (auto* peer = ed->getTopLevelComponent()->getPeer())
             {
                 auto scale = peer->getPlatformScaleFactor();
-                ed->setSize (roundToInt (width / scale), roundToInt (height / scale));
+                updateSizeFromEditor (roundToInt (width / scale), roundToInt (height / scale));
 
                 return;
             }
            #endif
 
-            ed->setSize (width, height);
+            updateSizeFromEditor (width, height);
         }
     }
 
@@ -2186,20 +2216,14 @@ private:
                                       (pointer_sized_int) &canonicalIn.get(), (void*) &canonicalOut.get(), 0.0f);
         }
 
-        HeapBlock<Vst2::VstSpeakerArrangement> inArrBlock (1, true), outArrBlock (1, true);
-
-        auto* inArr  = inArrBlock.get();
-        auto* outArr = outArrBlock.get();
-
-        if (! getSpeakerArrangementWrapper (effect, inArr, outArr))
-            inArr = outArr = nullptr;
+        const auto arrangement = getSpeakerArrangementWrapper (effect);
 
         for (int dir = 0; dir < 2; ++dir)
         {
             const bool isInput = (dir == 0);
             const int opcode = (isInput ? Vst2::effGetInputProperties : Vst2::effGetOutputProperties);
             const int maxChannels = (isInput ? effect->numInputs : effect->numOutputs);
-            const Vst2::VstSpeakerArrangement* arr = (isInput ? inArr : outArr);
+            const auto* arr = (isInput ? arrangement.in : arrangement.out);
             bool busAdded = false;
 
             Vst2::VstPinProperties pinProps;
@@ -2250,12 +2274,7 @@ private:
 
     static bool pluginHasDefaultChannelLayouts (Vst2::AEffect* effect)
     {
-        HeapBlock<Vst2::VstSpeakerArrangement> inArrBlock (1, true), outArrBlock (1, true);
-
-        auto* inArr  = inArrBlock.get();
-        auto* outArr = outArrBlock.get();
-
-        if (getSpeakerArrangementWrapper (effect, inArr, outArr))
+        if (getSpeakerArrangementWrapper (effect).isValid())
             return true;
 
         for (int dir = 0; dir < 2; ++dir)
@@ -2283,19 +2302,35 @@ private:
         return false;
     }
 
-    static bool getSpeakerArrangementWrapper (Vst2::AEffect* effect,
-                                              Vst2::VstSpeakerArrangement* inArr,
-                                              Vst2::VstSpeakerArrangement* outArr)
+    struct SpeakerArrangements
+    {
+        const Vst2::VstSpeakerArrangement* in;
+        const Vst2::VstSpeakerArrangement* out;
+
+        bool isValid() const noexcept { return in != nullptr && out != nullptr; }
+    };
+
+    static SpeakerArrangements getSpeakerArrangementWrapper (Vst2::AEffect* effect)
     {
         // Workaround: unfortunately old JUCE VST-2 plug-ins had a bug and would crash if
         // you try to get the speaker arrangement when there are no input channels present.
         // Hopefully, one day (when there are no more old JUCE plug-ins around), we can
         // comment out the next two lines.
         if (effect->numInputs == 0)
-            return false;
+            return { nullptr, nullptr };
 
-        return (effect->dispatcher (effect, Vst2::effGetSpeakerArrangement, 0,
-                                          reinterpret_cast<pointer_sized_int> (&inArr), &outArr, 0.0f) != 0);
+        SpeakerArrangements result { nullptr, nullptr };
+        const auto dispatchResult = effect->dispatcher (effect,
+                                                        Vst2::effGetSpeakerArrangement,
+                                                        0,
+                                                        reinterpret_cast<pointer_sized_int> (&result.in),
+                                                        &result.out,
+                                                        0.0f);
+
+        if (dispatchResult != 0)
+            return result;
+
+        return { nullptr, nullptr };
     }
 
     //==============================================================================
@@ -2757,7 +2792,7 @@ public:
         else
         #endif
         {
-            cocoaWrapper.reset (new AutoResizingNSViewComponentWithParent());
+            cocoaWrapper.reset (new NSViewComponentWithParent (plugin));
             addAndMakeVisible (cocoaWrapper.get());
         }
        #endif
@@ -2768,9 +2803,9 @@ public:
         dispatch (Vst2::effEditGetRect, 0, 0, &rect, 0);
 
         if (rect != nullptr)
-            setSize (rect->right - rect->left, rect->bottom - rect->top);
+            updateSizeFromEditor (rect->right - rect->left, rect->bottom - rect->top);
         else
-            setSize (1, 1);
+            updateSizeFromEditor (1, 1);
 
         setOpaque (true);
         setVisible (true);
@@ -2794,6 +2829,12 @@ public:
     }
 
     //==============================================================================
+    void updateSizeFromEditor (int w, int h)
+    {
+        if (! plugin.updateSizeFromEditor (w, h))
+            setSize (w, h);
+    }
+
    #if JUCE_MAC
     void paint (Graphics& g) override
     {
@@ -2805,7 +2846,7 @@ public:
         if (cocoaWrapper != nullptr)
         {
             if (isVisible())
-                openPluginWindow ((NSView*)cocoaWrapper->getView());
+                openPluginWindow ((NSView*) cocoaWrapper->getView());
             else
                 closePluginWindow();
         }
@@ -2825,9 +2866,9 @@ public:
    #else
     void paint (Graphics& g) override
     {
+       #if JUCE_LINUX || JUCE_BSD
         if (isOpen)
         {
-           #if JUCE_LINUX || JUCE_BSD
             if (pluginWindow != 0)
             {
                 auto clip = g.getClipBounds();
@@ -2836,9 +2877,9 @@ public:
                                                        static_cast<unsigned int> (clip.getWidth()),
                                                        static_cast<unsigned int> (clip.getHeight()), True);
             }
-           #endif
         }
         else
+       #endif
         {
             g.fillAll (Colours::black);
         }
@@ -2853,24 +2894,32 @@ public:
         {
             const ScopedValueSetter<bool> recursiveResizeSetter (recursiveResize, true);
 
-            auto pos = (peer->getAreaCoveredBy (*this).toFloat() * nativeScaleFactor).toNearestInt();
+            const auto editorSize = plugin.getEditorSize();
+            const auto pos = (peer->getAreaCoveredBy (*this).toFloat() * nativeScaleFactor).toNearestInt();
 
            #if JUCE_WINDOWS
             if (pluginHWND != 0)
             {
                 ScopedThreadDPIAwarenessSetter threadDpiAwarenessSetter { pluginHWND };
-                MoveWindow (pluginHWND, pos.getX(), pos.getY(), pos.getWidth(), pos.getHeight(), TRUE);
+                MoveWindow (pluginHWND,
+                            pos.getX(),
+                            pos.getY(),
+                            editorSize.getWidth(),
+                            editorSize.getHeight(),
+                            TRUE);
             }
            #elif JUCE_LINUX || JUCE_BSD
             if (pluginWindow != 0)
             {
-                X11Symbols::getInstance()->xMoveResizeWindow (display, pluginWindow,
-                                                              pos.getX(), pos.getY(),
-                                                              (unsigned int) pos.getWidth(),
-                                                              (unsigned int) pos.getHeight());
-
-                X11Symbols::getInstance()->xMapRaised (display, pluginWindow);
-                X11Symbols::getInstance()->xFlush (display);
+                auto* symbols = X11Symbols::getInstance();
+                symbols->xMoveResizeWindow (display,
+                                            pluginWindow,
+                                            pos.getX(),
+                                            pos.getY(),
+                                            (unsigned int) editorSize.getWidth(),
+                                            (unsigned int) editorSize.getHeight());
+                symbols->xMapRaised (display, pluginWindow);
+                symbols->xFlush (display);
             }
            #endif
         }
@@ -2889,12 +2938,10 @@ public:
             setScaleFactorAndDispatchMessage (peer->getPlatformScaleFactor());
 
        #if JUCE_LINUX || JUCE_BSD
-        SafePointer<VSTPluginWindow> safeThis (this);
-
-        MessageManager::callAsync ([this, safeThis]
+        MessageManager::callAsync ([safeThis = SafePointer<VSTPluginWindow> { this }]
         {
             if (safeThis != nullptr)
-                componentMovedOrResized (true, true);
+                safeThis->componentMovedOrResized (true, true);
         });
        #else
         componentMovedOrResized (true, true);
@@ -3050,7 +3097,7 @@ private:
         w = jmax (w, 32);
         h = jmax (h, 32);
 
-        setSize (w, h);
+        updateSizeFromEditor (w, h);
 
         startTimer (18 + juce::Random::getSystemRandom().nextInt (5));
         repaint();
@@ -3166,7 +3213,7 @@ private:
         w = jmax (w, 32);
         h = jmax (h, 32);
 
-        setSize (w, h);
+        updateSizeFromEditor (w, h);
 
        #if JUCE_WINDOWS
         checkPluginWindowSize();
@@ -3249,7 +3296,7 @@ private:
                 // If plug-in isn't DPI aware then we need to resize our window, but this may cause a recursive resize
                 // so add a check
                 if (! willCauseRecursiveResize (w, h))
-                    setSize (w, h);
+                    updateSizeFromEditor (w, h);
 
                 sizeCheckCount = 0;
             }
@@ -3376,7 +3423,7 @@ private:
       std::unique_ptr<CarbonWrapperComponent> carbonWrapper;
      #endif
 
-      std::unique_ptr<AutoResizingNSViewComponentWithParent> cocoaWrapper;
+      std::unique_ptr<NSViewComponentWithParent> cocoaWrapper;
 
       void resized() override
       {
@@ -3531,7 +3578,7 @@ void VSTPluginFormat::createPluginInstance (const PluginDescription& desc,
 
         if (auto module = ModuleHandle::findOrCreateModule (file))
         {
-            shellUIDToCreate = desc.uniqueId;
+            shellUIDToCreate = desc.uniqueId != 0 ? desc.uniqueId : desc.deprecatedUid;
 
             result.reset (VSTPluginInstance::create (module, sampleRate, blockSize));
 

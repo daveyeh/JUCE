@@ -31,7 +31,7 @@ namespace juce
 {
 
 // Implemented in juce_win32_Messaging.cpp
-bool windowsDispatchNextMessageOnSystemQueue (bool returnIfNoPendingMessages);
+bool dispatchNextMessageOnSystemQueue (bool returnIfNoPendingMessages);
 
 class Win32NativeFileChooser  : private Thread
 {
@@ -81,7 +81,7 @@ public:
 
         while (isThreadRunning())
         {
-            if (! windowsDispatchNextMessageOnSystemQueue (true))
+            if (! dispatchNextMessageOnSystemQueue (true))
                 Thread::sleep (1);
         }
     }
@@ -215,7 +215,7 @@ private:
             return ptr;
         }();
 
-        if (item == nullptr || FAILED (dialog.SetFolder (item)))
+        if (item == nullptr || FAILED (dialog.SetDefaultFolder (item)))
             return false;
 
         String filename (files.getData());
@@ -507,7 +507,7 @@ private:
             struct ScopedCoInitialize
             {
                 // IUnknown_GetWindow will only succeed when instantiated in a single-thread apartment
-                ScopedCoInitialize() { CoInitializeEx (nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE); }
+                ScopedCoInitialize() { ignoreUnused (CoInitializeEx (nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE)); }
                 ~ScopedCoInitialize() { CoUninitialize(); }
             };
 
@@ -680,12 +680,11 @@ private:
                 }
                 else
                 {
-                    Component::SafePointer<FilePreviewComponent> safeComp (comp);
-
-                    File selectedFile (path);
-                    MessageManager::callAsync ([safeComp, selectedFile]() mutable
+                    MessageManager::callAsync ([safeComp = Component::SafePointer<FilePreviewComponent> { comp },
+                                                selectedFile = File { path }]() mutable
                                                {
-                                                    safeComp->selectedFileChanged (selectedFile);
+                                                    if (safeComp != nullptr)
+                                                        safeComp->selectedFileChanged (selectedFile);
                                                });
                 }
             }

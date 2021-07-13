@@ -153,11 +153,11 @@ namespace
     {
         const int frameThickness = GetSystemMetrics (SM_CYFIXEDFRAME);
 
-        while (w != 0)
+        while (w != nullptr)
         {
             auto parent = getWindowParent (w);
 
-            if (parent == 0)
+            if (parent == nullptr)
                 break;
 
             TCHAR windowType[32] = { 0 };
@@ -247,9 +247,9 @@ private:
 
 public:
     //==============================================================================
-    JuceVSTWrapper (Vst2::audioMasterCallback cb, AudioProcessor* af)
+    JuceVSTWrapper (Vst2::audioMasterCallback cb, std::unique_ptr<AudioProcessor> af)
        : hostCallback (cb),
-         processor (af)
+         processor (std::move (af))
     {
         inParameterChangedCallback = false;
 
@@ -283,7 +283,7 @@ public:
         vstEffect.process = nullptr;
         vstEffect.setParameter = (Vst2::AEffectSetParameterProc) setParameterCB;
         vstEffect.getParameter = (Vst2::AEffectGetParameterProc) getParameterCB;
-        vstEffect.numPrograms = jmax (1, af->getNumPrograms());
+        vstEffect.numPrograms = jmax (1, processor->getNumPrograms());
         vstEffect.numParams = juceParameters.getNumParameters();
         vstEffect.numInputs = maxNumInChannels;
         vstEffect.numOutputs = maxNumOutChannels;
@@ -333,7 +333,6 @@ public:
 
             hasShutdown = true;
 
-            delete processor;
             processor = nullptr;
 
             jassert (editorComp == nullptr);
@@ -1177,11 +1176,11 @@ public:
 
                 HWND w = (HWND) getWindowHandle();
 
-                while (w != 0)
+                while (w != nullptr)
                 {
                     HWND parent = getWindowParent (w);
 
-                    if (parent == 0)
+                    if (parent == nullptr)
                         break;
 
                     TCHAR windowType [32] = { 0 };
@@ -1195,7 +1194,7 @@ public:
                     GetWindowRect (parent, &parentPos);
 
                     if (w != (HWND) getWindowHandle())
-                        SetWindowPos (w, 0, 0, 0, newWidth + dw, newHeight + dh,
+                        SetWindowPos (w, nullptr, 0, 0, newWidth + dw, newHeight + dh,
                                       SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER);
 
                     dw = (parentPos.right - parentPos.left) - (windowPos.right - windowPos.left);
@@ -1207,11 +1206,11 @@ public:
                         break;
 
                     if (dw > 100 || dh > 100)
-                        w = 0;
+                        w = nullptr;
                 }
 
-                if (w != 0)
-                    SetWindowPos (w, 0, 0, 0, newWidth + dw, newHeight + dh,
+                if (w != nullptr)
+                    SetWindowPos (w, nullptr, 0, 0, newWidth + dw, newHeight + dh,
                                   SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOZORDER | SWP_NOOWNERZORDER);
                #endif
             }
@@ -1328,23 +1327,44 @@ private:
         void update (const ChangeDetails& details)
         {
             if (details.latencyChanged)
+            {
                 owner.vstEffect.initialDelay = owner.processor->getLatencySamples();
+                callbackBits |= audioMasterIOChangedBit;
+            }
 
             if (details.parameterInfoChanged || details.programChanged)
-                triggerAsyncUpdate();
+                callbackBits |= audioMasterUpdateDisplayBit;
+
+            triggerAsyncUpdate();
         }
 
     private:
         void handleAsyncUpdate() override
         {
+            const auto callbacksToFire = callbackBits.exchange (0);
+
             if (auto* callback = owner.hostCallback)
             {
-                callback (&owner.vstEffect, Vst2::audioMasterUpdateDisplay, 0, 0, nullptr, 0);
-                callback (&owner.vstEffect, Vst2::audioMasterIOChanged,     0, 0, nullptr, 0);
+                struct FlagPair
+                {
+                    Vst2::AudioMasterOpcodesX opcode;
+                    int bit;
+                };
+
+                constexpr FlagPair pairs[] { { Vst2::audioMasterUpdateDisplay, audioMasterUpdateDisplayBit },
+                                             { Vst2::audioMasterIOChanged,     audioMasterIOChangedBit } };
+
+                for (const auto& pair : pairs)
+                    if ((callbacksToFire & pair.bit) != 0)
+                        callback (&owner.vstEffect, pair.opcode, 0, 0, nullptr, 0);
             }
         }
 
+        static constexpr auto audioMasterUpdateDisplayBit = 1 << 0;
+        static constexpr auto audioMasterIOChangedBit     = 1 << 1;
+
         JuceVSTWrapper& owner;
+        std::atomic<int> callbackBits { 0 };
     };
 
     static JuceVSTWrapper* getWrapper (Vst2::AEffect* v) noexcept  { return static_cast<JuceVSTWrapper*> (v->object); }
@@ -1822,7 +1842,7 @@ private:
         if (args.index == Vst2::effGetParamDisplay)
             return handleCockosGetParameterText (args.value, args.ptr, args.opt);
 
-        if (auto callbackHandler = dynamic_cast<VSTCallbackHandler*> (processor))
+        if (auto callbackHandler = dynamic_cast<VSTCallbackHandler*> (processor.get()))
             return callbackHandler->handleVstManufacturerSpecific (args.index, args.value, args.ptr, args.opt);
 
         return 0;
@@ -1882,7 +1902,7 @@ private:
         if (matches ("hasCockosExtensions"))
             return (int32) 0xbeef0000;
 
-        if (auto callbackHandler = dynamic_cast<VSTCallbackHandler*> (processor))
+        if (auto callbackHandler = dynamic_cast<VSTCallbackHandler*> (processor.get()))
             return callbackHandler->handleVstPluginCanDo (args.index, args.value, args.ptr, args.opt);
 
         return 0;
@@ -1909,7 +1929,9 @@ private:
 
     pointer_sized_int handleKeyboardFocusRequired (VstOpCodeArguments)
     {
+        JUCE_BEGIN_IGNORE_WARNINGS_MSVC (6326)
         return (JucePlugin_EditorRequiresKeyboardFocus != 0) ? 1 : 0;
+        JUCE_END_IGNORE_WARNINGS_MSVC
     }
 
     pointer_sized_int handleGetVstInterfaceVersion (VstOpCodeArguments)
@@ -2039,7 +2061,7 @@ private:
    #endif
 
     Vst2::audioMasterCallback hostCallback;
-    AudioProcessor* processor = {};
+    std::unique_ptr<AudioProcessor> processor;
     double sampleRate = 44100.0;
     int32 blockSize = 1024;
     Vst2::AEffect vstEffect;
@@ -2104,11 +2126,12 @@ namespace
                     MessageManagerLock mmLock;
                    #endif
 
-                    auto* processor = createPluginFilterOfType (AudioProcessor::wrapperType_VST);
-                    auto* wrapper = new JuceVSTWrapper (audioMaster, processor);
+                    std::unique_ptr<AudioProcessor> processor { createPluginFilterOfType (AudioProcessor::wrapperType_VST) };
+                    auto* processorPtr = processor.get();
+                    auto* wrapper = new JuceVSTWrapper (audioMaster, std::move (processor));
                     auto* aEffect = wrapper->getAEffect();
 
-                    if (auto* callbackHandler = dynamic_cast<VSTCallbackHandler*> (processor))
+                    if (auto* callbackHandler = dynamic_cast<VSTCallbackHandler*> (processorPtr))
                     {
                         callbackHandler->handleVstHostCallbackAvailable ([audioMaster, aEffect] (int32 opcode, int32 index, pointer_sized_int value, void* ptr, float opt)
                         {
