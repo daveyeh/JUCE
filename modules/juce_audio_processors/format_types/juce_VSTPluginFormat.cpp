@@ -80,6 +80,10 @@ JUCE_BEGIN_IGNORE_WARNINGS_MSVC (4355)
 #define JUCE_VST_WRAPPER_INVOKE_MAIN  effect = module->moduleMain ((Vst2::audioMasterCallback) &audioMaster);
 #endif
 
+#ifndef JUCE_VST_FALLBACK_HOST_NAME
+ #define JUCE_VST_FALLBACK_HOST_NAME "Juce VST Host"
+#endif
+
 //==============================================================================
 namespace juce
 {
@@ -2096,7 +2100,7 @@ private:
 
     static pointer_sized_int getHostName (char* name)
     {
-        String hostName ("Juce VST Host");
+        String hostName (JUCE_VST_FALLBACK_HOST_NAME);
 
         if (auto* app = JUCEApplicationBase::getInstance())
             hostName = app->getApplicationName();
@@ -2894,23 +2898,24 @@ public:
         {
             const ScopedValueSetter<bool> recursiveResizeSetter (recursiveResize, true);
 
-            const auto editorSize = plugin.getEditorSize();
             const auto pos = (peer->getAreaCoveredBy (*this).toFloat() * nativeScaleFactor).toNearestInt();
 
            #if JUCE_WINDOWS
             if (pluginHWND != 0)
             {
                 ScopedThreadDPIAwarenessSetter threadDpiAwarenessSetter { pluginHWND };
-                MoveWindow (pluginHWND,
-                            pos.getX(),
-                            pos.getY(),
-                            editorSize.getWidth(),
-                            editorSize.getHeight(),
-                            TRUE);
+                SetWindowPos (pluginHWND,
+                              HWND_BOTTOM,
+                              pos.getX(),
+                              pos.getY(),
+                              0,
+                              0,
+                              SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER);
             }
            #elif JUCE_LINUX || JUCE_BSD
             if (pluginWindow != 0)
             {
+                const auto editorSize = plugin.getEditorSize();
                 auto* symbols = X11Symbols::getInstance();
                 symbols->xMoveResizeWindow (display,
                                             pluginWindow,

@@ -136,6 +136,10 @@ using namespace juce;
 - (BOOL) canBecomeFirstResponder;
 
 - (BOOL) textView: (UITextView*) textView shouldChangeTextInRange: (NSRange) range replacementText: (NSString*) text;
+
+- (BOOL) isAccessibilityElement;
+- (CGRect) accessibilityFrame;
+- (NSArray*) accessibilityElements;
 @end
 
 //==============================================================================
@@ -540,6 +544,29 @@ MultiTouchMapper<UITouch*> UIViewComponentPeer::currentTouches;
                                              nsStringToJuce (text));
 }
 
+- (BOOL) isAccessibilityElement
+{
+    return NO;
+}
+
+- (CGRect) accessibilityFrame
+{
+    if (owner != nullptr)
+        if (auto* handler = owner->getComponent().getAccessibilityHandler())
+            return convertToCGRect (handler->getComponent().getScreenBounds());
+
+    return CGRectZero;
+}
+
+- (NSArray*) accessibilityElements
+{
+    if (owner != nullptr)
+        if (auto* handler = owner->getComponent().getAccessibilityHandler())
+            return getContainerAccessibilityElements (*handler);
+
+    return nil;
+}
+
 @end
 
 //==============================================================================
@@ -589,9 +616,7 @@ UIViewComponentPeer::UIViewComponentPeer (Component& comp, int windowStyleFlags,
 
    #if JUCE_COREGRAPHICS_DRAW_ASYNC
     if (! getComponentAsyncLayerBackedViewDisabled (component))
-    {
         [[view layer] setDrawsAsynchronously: YES];
-    }
    #endif
 
     if (isSharedWindow)
