@@ -1283,6 +1283,8 @@ struct StateHelpers
 
         void draw() noexcept
         {
+            // AIX flush glbufferdata, seems to improve performance
+            context.extensions.glBufferData (GL_ARRAY_BUFFER, (GLsizeiptr) sizeof (vertexData), NULL, GL_DYNAMIC_DRAW);
             context.extensions.glBufferSubData (GL_ARRAY_BUFFER, 0, (GLsizeiptr) ((size_t) numVertices * sizeof (VertexInfo)), vertexData);
             // NB: If you get a random crash in here and are running in a Parallels VM, it seems to be a bug in
             // their driver.. Can't find a workaround unfortunately.
