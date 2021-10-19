@@ -2247,14 +2247,14 @@ void Component::mouseDoubleClick (const MouseEvent&)    {}
 void Component::mouseWheelMove (const MouseEvent& e, const MouseWheelDetails& wheel)
 {
     // the base class just passes this event up to its parent..
-    if (parentComponent != nullptr)
+    if (parentComponent != nullptr && parentComponent->isEnabled())
         parentComponent->mouseWheelMove (e.getEventRelativeTo (parentComponent), wheel);
 }
 
 void Component::mouseMagnify (const MouseEvent& e, float magnifyAmount)
 {
     // the base class just passes this event up to its parent..
-    if (parentComponent != nullptr)
+    if (parentComponent != nullptr && parentComponent->isEnabled())
         parentComponent->mouseMagnify (e.getEventRelativeTo (parentComponent), magnifyAmount);
 }
 
@@ -2687,13 +2687,17 @@ void Component::internalKeyboardFocusGain (FocusChangeType cause,
 {
     focusGained (cause);
 
-    if (safePointer != nullptr)
-    {
+    if (safePointer == nullptr)
+        return;
+
+    if (hasKeyboardFocus (false))
         if (auto* handler = getAccessibilityHandler())
             handler->grabFocus();
 
-        internalChildKeyboardFocusChange (cause, safePointer);
-    }
+    if (safePointer == nullptr)
+        return;
+
+    internalChildKeyboardFocusChange (cause, safePointer);
 }
 
 void Component::internalKeyboardFocusLoss (FocusChangeType cause)
@@ -3003,6 +3007,15 @@ void Component::setEnabled (bool shouldBeEnabled)
 
         BailOutChecker checker (this);
         componentListeners.callChecked (checker, [this] (ComponentListener& l) { l.componentEnablementChanged (*this); });
+
+        if (! shouldBeEnabled && hasKeyboardFocus (true))
+        {
+            if (parentComponent != nullptr)
+                parentComponent->grabKeyboardFocus();
+
+            // ensure that keyboard focus is given away if it wasn't taken by parent
+            giveAwayKeyboardFocus();
+        }
     }
 }
 
@@ -3152,9 +3165,20 @@ void Component::setAccessible (bool shouldBeAccessible)
         invalidateAccessibilityHandler();
 }
 
+bool Component::isAccessible() const noexcept
+{
+    return (! flags.accessibilityIgnoredFlag
+            && (parentComponent == nullptr || parentComponent->isAccessible()));
+}
+
 std::unique_ptr<AccessibilityHandler> Component::createAccessibilityHandler()
 {
     return std::make_unique<AccessibilityHandler> (*this, AccessibilityRole::unspecified);
+}
+
+std::unique_ptr<AccessibilityHandler> Component::createIgnoredAccessibilityHandler (Component& comp)
+{
+    return std::make_unique<AccessibilityHandler> (comp, AccessibilityRole::ignored);
 }
 
 void Component::invalidateAccessibilityHandler()
@@ -3164,7 +3188,7 @@ void Component::invalidateAccessibilityHandler()
 
 AccessibilityHandler* Component::getAccessibilityHandler()
 {
-    if (flags.accessibilityIgnoredFlag || getWindowHandle() == nullptr)
+    if (! isAccessible() || getWindowHandle() == nullptr)
         return nullptr;
 
     if (accessibilityHandler == nullptr

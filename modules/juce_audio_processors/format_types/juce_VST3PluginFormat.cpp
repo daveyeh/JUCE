@@ -31,6 +31,10 @@
 namespace juce
 {
 
+// UB Sanitizer doesn't necessarily have instrumentation for loaded plugins, so
+// it won't recognize the dynamic types of pointers to the plugin's interfaces.
+JUCE_BEGIN_NO_SANITIZE ("vptr")
+
 using namespace Steinberg;
 
 //==============================================================================
@@ -328,7 +332,7 @@ struct VST3HostContext  : public Vst::IComponentHandler,  // From VST V3.0.0
         attributeList = new AttributeList (this);
     }
 
-    virtual ~VST3HostContext() override {}
+    ~VST3HostContext() override = default;
 
     JUCE_DECLARE_VST3_COM_REF_METHODS
 
@@ -345,13 +349,9 @@ struct VST3HostContext  : public Vst::IComponentHandler,  // From VST V3.0.0
     tresult PLUGIN_API endEdit (Vst::ParamID paramID) override;
 
     tresult PLUGIN_API restartComponent (Steinberg::int32 flags) override;
+    tresult PLUGIN_API setDirty (TBool) override;
 
     //==============================================================================
-    tresult PLUGIN_API setDirty (TBool) override
-    {
-        return kResultFalse;
-    }
-
     tresult PLUGIN_API requestOpenEditor (FIDString name) override
     {
         ignoreUnused (name);
@@ -1351,17 +1351,17 @@ private:
 
 //==============================================================================
 struct VST3PluginWindow : public AudioProcessorEditor,
-                          public ComponentMovementWatcher,
-                          public ComponentPeer::ScaleFactorListener,
-                          public IPlugFrame
+                          private ComponentMovementWatcher,
+                          private ComponentPeer::ScaleFactorListener,
+                          private IPlugFrame
 {
     VST3PluginWindow (AudioPluginInstance* owner, IPlugView* pluginView)
-      : AudioProcessorEditor (owner),
-        ComponentMovementWatcher (this),
-        view (pluginView, false)
-       #if JUCE_MAC
-      , embeddedComponent (*owner)
-       #endif
+        : AudioProcessorEditor (owner),
+          ComponentMovementWatcher (this),
+          view (pluginView, false)
+         #if JUCE_MAC
+        , embeddedComponent (*owner)
+         #endif
     {
         setSize (10, 10);
         setOpaque (true);
@@ -1369,6 +1369,10 @@ struct VST3PluginWindow : public AudioProcessorEditor,
 
         warnOnFailure (view->setFrame (this));
         view->queryInterface (Steinberg::IPlugViewContentScaleSupport::iid, (void**) &scaleInterface);
+
+        if (scaleInterface != nullptr)
+            warnOnFailure (scaleInterface->setContentScaleFactor ((Steinberg::IPlugViewContentScaleSupport::ScaleFactor) nativeScaleFactor));
+
         resizeToFit();
     }
 
@@ -1396,9 +1400,9 @@ struct VST3PluginWindow : public AudioProcessorEditor,
     }
 
    #if JUCE_LINUX || JUCE_BSD
-    Steinberg::tresult PLUGIN_API queryInterface (const Steinberg::TUID iid, void** obj) override
+    Steinberg::tresult PLUGIN_API queryInterface (const Steinberg::TUID queryIid, void** obj) override
     {
-        if (doUIDsMatch (iid, Steinberg::Linux::IRunLoop::iid))
+        if (doUIDsMatch (queryIid, Steinberg::Linux::IRunLoop::iid))
         {
             *obj = &runLoop.get();
             return kResultTrue;
@@ -1434,6 +1438,7 @@ struct VST3PluginWindow : public AudioProcessorEditor,
     bool keyStateChanged (bool /*isKeyDown*/) override  { return true; }
     bool keyPressed (const KeyPress& /*key*/) override  { return true; }
 
+private:
     //==============================================================================
     void componentPeerChanged() override
     {
@@ -1495,23 +1500,16 @@ struct VST3PluginWindow : public AudioProcessorEditor,
     void componentVisibilityChanged() override
     {
         attachPluginWindow();
-
-        if (! hasDoneInitialResize)
-            resizeToFit();
-
+        resizeToFit();
         componentMovedOrResized (true, true);
     }
     using ComponentMovementWatcher::componentVisibilityChanged;
 
     void nativeScaleFactorChanged (double newScaleFactor) override
     {
-        if (approximatelyEqual ((float) newScaleFactor, nativeScaleFactor))
-            return;
-
         nativeScaleFactor = (float) newScaleFactor;
-
-        if (pluginHandle != HandleFormat{} && scaleInterface != nullptr)
-            scaleInterface->setContentScaleFactor ((Steinberg::IPlugViewContentScaleSupport::ScaleFactor) nativeScaleFactor);
+        updatePluginScale();
+        componentMovedOrResized (false, true);
     }
 
     void resizeToFit()
@@ -1519,23 +1517,43 @@ struct VST3PluginWindow : public AudioProcessorEditor,
         ViewRect rect;
         warnOnFailure (view->getSize (&rect));
         resizeWithRect (*this, rect, nativeScaleFactor);
-
-        hasDoneInitialResize = true;
     }
 
     tresult PLUGIN_API resizeView (IPlugView* incomingView, ViewRect* newSize) override
     {
+        const ScopedValueSetter<bool> recursiveResizeSetter (recursiveResize, true);
+
         if (incomingView != nullptr && newSize != nullptr && incomingView == view)
         {
+            auto scaleToViewRect = [this] (int dimension)
+            {
+                return (Steinberg::int32) roundToInt ((float) dimension * nativeScaleFactor);
+            };
+
+            auto oldWidth  = scaleToViewRect (getWidth());
+            auto oldHeight = scaleToViewRect (getHeight());
+
             resizeWithRect (embeddedComponent, *newSize, nativeScaleFactor);
+
+           #if JUCE_WINDOWS
+            setPluginWindowPos (*newSize);
+           #endif
+
             setSize (embeddedComponent.getWidth(), embeddedComponent.getHeight());
 
             // According to the VST3 Workflow Diagrams, a resizeView from the plugin should
             // always trigger a response from the host which confirms the new size.
-            ViewRect rect;
-            rect.right  = (Steinberg::int32) roundToInt ((float) getWidth()  * nativeScaleFactor);
-            rect.bottom = (Steinberg::int32) roundToInt ((float) getHeight() * nativeScaleFactor);
-            view->onSize (&rect);
+            ViewRect rect { 0, 0,
+                            scaleToViewRect (getWidth()),
+                            scaleToViewRect (getHeight()) };
+
+            if (rect.right != oldWidth || rect.bottom != oldHeight
+                || ! isInOnSize)
+            {
+                // Guard against plug-ins immediately calling resizeView() with the same size
+                const ScopedValueSetter<bool> inOnSizeSetter (isInOnSize, true);
+                view->onSize (&rect);
+            }
 
             return kResultTrue;
         }
@@ -1544,14 +1562,11 @@ struct VST3PluginWindow : public AudioProcessorEditor,
         return kInvalidArgument;
     }
 
-private:
     //==============================================================================
     static void resizeWithRect (Component& comp, const ViewRect& rect, float scaleFactor)
     {
-        comp.setBounds (roundToInt ((float) rect.left / scaleFactor),
-                        roundToInt ((float) rect.top  / scaleFactor),
-                        jmax (10, std::abs (roundToInt ((float) rect.getWidth()  / scaleFactor))),
-                        jmax (10, std::abs (roundToInt ((float) rect.getHeight() / scaleFactor))));
+        comp.setSize (jmax (10, std::abs (roundToInt ((float) rect.getWidth()  / scaleFactor))),
+                      jmax (10, std::abs (roundToInt ((float) rect.getHeight() / scaleFactor))));
     }
 
     void attachPluginWindow()
@@ -1581,9 +1596,7 @@ private:
             }
 
             warnOnFailure (view->attached ((void*) pluginHandle, defaultVST3WindowType));
-
-            if (scaleInterface != nullptr)
-                scaleInterface->setContentScaleFactor ((Steinberg::IPlugViewContentScaleSupport::ScaleFactor) nativeScaleFactor);
+            updatePluginScale();
         }
     }
 
@@ -1595,6 +1608,14 @@ private:
          for (int i = 0; i < ComponentPeer::getNumPeers(); ++i)
              if (ComponentPeer::getPeer (i) == currentPeer)
                  currentPeer->removeScaleFactorListener (this);
+    }
+
+    void updatePluginScale()
+    {
+        if (scaleInterface != nullptr)
+            warnOnFailure (scaleInterface->setContentScaleFactor ((Steinberg::IPlugViewContentScaleSupport::ScaleFactor) nativeScaleFactor));
+        else
+            resizeToFit();
     }
 
     //==============================================================================
@@ -1642,7 +1663,7 @@ private:
    #endif
 
     HandleFormat pluginHandle = {};
-    bool recursiveResize = false, hasDoneInitialResize = false;
+    bool recursiveResize = false, isInOnSize = false;
 
     ComponentPeer* currentPeer = nullptr;
     Steinberg::IPlugViewContentScaleSupport* scaleInterface = nullptr;
@@ -2018,7 +2039,7 @@ private:
 };
 
 //==============================================================================
-class VST3PluginInstance : public AudioPluginInstance
+class VST3PluginInstance final  : public AudioPluginInstance
 {
 public:
     //==============================================================================
@@ -2132,6 +2153,11 @@ public:
         StringArray getAllValueStrings() const override
         {
             return {};
+        }
+
+        String getParameterID() const override
+        {
+            return String (paramID);
         }
 
         Steinberg::Vst::ParamID getParamID() const noexcept { return paramID; }
@@ -2248,7 +2274,6 @@ public:
         editController->setComponentHandler (holder->host);
         grabInformationObjects();
         interconnectComponentAndController();
-        updateMidiMappings();
 
         auto configureParameters = [this]
         {
@@ -2265,6 +2290,8 @@ public:
         if (getParameters().isEmpty() && editController->getParameterCount() > 0)
             configureParameters();
 
+        updateMidiMappings();
+
         parameterDispatcher.start (*editController);
 
         return true;
@@ -2276,7 +2303,7 @@ public:
         {
             explicit Extensions (const VST3PluginInstance* instanceIn) : instance (instanceIn) {}
 
-            void* getIComponentPtr() const noexcept override   { return instance->holder->component; }
+            Steinberg::Vst::IComponent* getIComponentPtr() const noexcept override   { return instance->holder->component; }
 
             MemoryBlock getPreset() const override             { return instance->getStateForPresetFile(); }
 
@@ -2802,7 +2829,7 @@ public:
             auto value = static_cast<Vst::ParamValue> (program) / static_cast<Vst::ParamValue> (jmax (1, programNames.size() - 1));
 
             if (auto* param = getParameterForID (programParameterID))
-                param->setValue ((float) value);
+                param->setValueNotifyingHost ((float) value);
         }
     }
 
@@ -2883,11 +2910,16 @@ public:
         jassert (editController != nullptr);
 
         warnOnFailureIfImplemented (editController->setComponentState (&stream));
+        resetParameters();
+    }
 
+    void resetParameters()
+    {
         for (auto* parameter : getParameters())
         {
             auto* vst3Param = static_cast<VST3Parameter*> (parameter);
-            vst3Param->setValueWithoutUpdatingProcessor ((float) editController->getParamNormalized (vst3Param->getParamID()));
+            const auto value = (float) editController->getParamNormalized (vst3Param->getParamID());
+            vst3Param->setValueWithoutUpdatingProcessor (value);
         }
     }
 
@@ -3116,7 +3148,7 @@ private:
             group->addChild (std::unique_ptr<AudioProcessorParameter> (param));
         }
 
-        setParameterTree (std::move (newParameterTree));
+        setHostedParameterTree (std::move (newParameterTree));
 
         idToParamMap = [this]
         {
@@ -3416,53 +3448,49 @@ AudioPluginInstance* VST3ComponentHolder::createPluginInstance()
 //==============================================================================
 tresult VST3HostContext::beginEdit (Vst::ParamID paramID)
 {
-    if (plugin != nullptr)
-    {
-        if (auto* param = plugin->getParameterForID (paramID))
-        {
-            param->beginChangeGesture();
-            return kResultTrue;
-        }
+    if (plugin == nullptr)
+        return kResultTrue;
 
-        jassertfalse; // Invalid parameter index!
-        return kResultFalse;
+    if (auto* param = plugin->getParameterForID (paramID))
+    {
+        param->beginChangeGesture();
+        return kResultTrue;
     }
 
-    return kResultTrue;
+    return kResultFalse;
 }
 
 tresult VST3HostContext::performEdit (Vst::ParamID paramID, Vst::ParamValue valueNormalised)
 {
-    if (plugin != nullptr)
+    if (plugin == nullptr)
+        return kResultTrue;
+
+    if (auto* param = plugin->getParameterForID (paramID))
     {
-        if (auto* param = plugin->getParameterForID (paramID))
-            param->setValueFromEditor ((float) valueNormalised);
-        else
-            jassertfalse; // Invalid parameter index!
+        param->setValueFromEditor ((float) valueNormalised);
 
         // did the plug-in already update the parameter internally
         if (plugin->editController->getParamNormalized (paramID) != (float) valueNormalised)
             return plugin->editController->setParamNormalized (paramID, valueNormalised);
+
+        return kResultTrue;
     }
 
-    return kResultTrue;
+    return kResultFalse;
 }
 
 tresult VST3HostContext::endEdit (Vst::ParamID paramID)
 {
-    if (plugin != nullptr)
-    {
-        if (auto* param = plugin->getParameterForID (paramID))
-        {
-            param->endChangeGesture();
-            return kResultTrue;
-        }
+    if (plugin == nullptr)
+        return kResultTrue;
 
-        jassertfalse; // Invalid parameter index!
-        return kResultFalse;
+    if (auto* param = plugin->getParameterForID (paramID))
+    {
+        param->endChangeGesture();
+        return kResultTrue;
     }
 
-    return kResultTrue;
+    return kResultFalse;
 }
 
 tresult VST3HostContext::restartComponent (Steinberg::int32 flags)
@@ -3474,6 +3502,14 @@ tresult VST3HostContext::restartComponent (Steinberg::int32 flags)
 
     componentRestarter.restart (flags);
     return kResultTrue;
+}
+
+tresult PLUGIN_API VST3HostContext::setDirty (TBool needsSave)
+{
+    if (needsSave)
+        plugin->updateHostDisplay (AudioPluginInstance::ChangeDetails{}.withNonParameterStateChanged (true));
+
+    return kResultOk;
 }
 
 void VST3HostContext::restartComponentOnMessageThread (int32 flags)
@@ -3504,6 +3540,9 @@ void VST3HostContext::restartComponentOnMessageThread (int32 flags)
 
     if (hasFlag (flags, Vst::kMidiCCAssignmentChanged))
         plugin->updateMidiMappings();
+
+    if (hasFlag (flags, Vst::kParamValuesChanged))
+        plugin->resetParameters();
 
     plugin->updateHostDisplay (AudioProcessorListener::ChangeDetails().withProgramChanged (true)
                                                                       .withParameterInfoChanged (true));
@@ -3737,6 +3776,8 @@ FileSearchPath VST3PluginFormat::getDefaultLocationsToSearch()
     return FileSearchPath ("/usr/lib/vst3/;/usr/local/lib/vst3/;~/.vst3/");
    #endif
 }
+
+JUCE_END_NO_SANITIZE
 
 } // namespace juce
 
