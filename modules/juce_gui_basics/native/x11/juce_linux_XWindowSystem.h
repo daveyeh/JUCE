@@ -177,6 +177,7 @@ public:
     void setIcon (::Window , const Image&) const;
     void setVisible (::Window, bool shouldBeVisible) const;
     void setBounds (::Window, Rectangle<int>, bool fullScreen) const;
+    void updateConstraints (::Window) const;
 
     BorderSize<int> getBorderSize   (::Window) const;
     Rectangle<int>  getWindowBounds (::Window, ::Window parentWindow);
@@ -212,10 +213,10 @@ public:
     Point<float> getCurrentMousePosition() const;
     void setMousePosition (Point<float> pos) const;
 
-    void* createCustomMouseCursorInfo (const Image&, Point<int> hotspot) const;
-    void deleteMouseCursor (void* cursorHandle) const;
-    void* createStandardMouseCursor (MouseCursor::StandardCursorType) const;
-    void showCursor (::Window, void* cursorHandle) const;
+    Cursor createCustomMouseCursorInfo (const Image&, Point<int> hotspot) const;
+    void deleteMouseCursor (Cursor cursorHandle) const;
+    Cursor createStandardMouseCursor (MouseCursor::StandardCursorType) const;
+    void showCursor (::Window, Cursor cursorHandle) const;
 
     bool isKeyCurrentlyDown (int keyCode) const;
     ModifierKeys getNativeRealtimeModifiers() const;
@@ -316,6 +317,7 @@ private:
 
     void dismissBlockingModals      (LinuxComponentPeer*) const;
     void dismissBlockingModals      (LinuxComponentPeer*, const XConfigureEvent&) const;
+    void updateConstraints          (::Window, ComponentPeer&) const;
 
     ::Window findTopLevelWindowOf (::Window) const;
 

@@ -81,7 +81,6 @@ JUCE_END_IGNORE_WARNINGS_GCC_LIKE
 #define JUCE_CORE_INCLUDE_OBJC_HELPERS 1
 
 #include "../utility/juce_IncludeModuleHeaders.h"
-#include "../utility/juce_FakeMouseMoveGenerator.h"
 #include "../utility/juce_CarbonVisibility.h"
 
 #include <juce_audio_basics/native/juce_mac_CoreAudioLayouts.h>
@@ -1092,22 +1091,27 @@ public:
         info.ppqPositionOfLastBarStart = 0;
         info.isRecording = false;
 
-        switch (lastTimeStamp.mSMPTETime.mType)
+        info.frameRate = [this]
         {
-            case kSMPTETimeType2398:        info.frameRate = AudioPlayHead::fps23976;    break;
-            case kSMPTETimeType24:          info.frameRate = AudioPlayHead::fps24;       break;
-            case kSMPTETimeType25:          info.frameRate = AudioPlayHead::fps25;       break;
-            case kSMPTETimeType30Drop:      info.frameRate = AudioPlayHead::fps30drop;   break;
-            case kSMPTETimeType30:          info.frameRate = AudioPlayHead::fps30;       break;
-            case kSMPTETimeType2997:        info.frameRate = AudioPlayHead::fps2997;     break;
-            case kSMPTETimeType2997Drop:    info.frameRate = AudioPlayHead::fps2997drop; break;
-            case kSMPTETimeType60:          info.frameRate = AudioPlayHead::fps60;       break;
-            case kSMPTETimeType60Drop:      info.frameRate = AudioPlayHead::fps60drop;   break;
-            case kSMPTETimeType5994:
-            case kSMPTETimeType5994Drop:
-            case kSMPTETimeType50:
-            default:                        info.frameRate = AudioPlayHead::fpsUnknown;  break;
-        }
+            switch (lastTimeStamp.mSMPTETime.mType)
+            {
+                case kSMPTETimeType2398:        return FrameRate().withBaseRate (24).withPullDown();
+                case kSMPTETimeType24:          return FrameRate().withBaseRate (24);
+                case kSMPTETimeType25:          return FrameRate().withBaseRate (25);
+                case kSMPTETimeType30Drop:      return FrameRate().withBaseRate (30).withDrop();
+                case kSMPTETimeType30:          return FrameRate().withBaseRate (30);
+                case kSMPTETimeType2997:        return FrameRate().withBaseRate (30).withPullDown();
+                case kSMPTETimeType2997Drop:    return FrameRate().withBaseRate (30).withPullDown().withDrop();
+                case kSMPTETimeType60:          return FrameRate().withBaseRate (60);
+                case kSMPTETimeType60Drop:      return FrameRate().withBaseRate (60).withDrop();
+                case kSMPTETimeType5994:        return FrameRate().withBaseRate (60).withPullDown();
+                case kSMPTETimeType5994Drop:    return FrameRate().withBaseRate (60).withPullDown().withDrop();
+                case kSMPTETimeType50:          return FrameRate().withBaseRate (50);
+                default:                        break;
+            }
+
+            return FrameRate();
+        }();
 
         if (CallHostBeatAndTempo (&info.ppqPosition, &info.bpm) != noErr)
         {
@@ -1482,7 +1486,6 @@ public:
             setWantsKeyboardFocus (true);
            #endif
 
-            ignoreUnused (fakeMouseGenerator);
             setBounds (getSizeToContainChild());
 
             lastBounds = getBounds();
@@ -1594,7 +1597,6 @@ public:
         }
 
     private:
-        FakeMouseMoveGenerator fakeMouseGenerator;
         Rectangle<int> lastBounds;
 
         JUCE_DECLARE_NON_COPYABLE (EditorCompHolder)
@@ -2432,7 +2434,6 @@ private:
     //==============================================================================
     AudioProcessor* juceFilter;
     std::unique_ptr<Component> windowComp;
-    FakeMouseMoveGenerator fakeMouseGenerator;
 
     void deleteUI()
     {

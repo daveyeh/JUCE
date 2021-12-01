@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<Project ToolsVersion="16.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
     <Filter Include="NetworkGraphicsDemo\Source">
       <UniqueIdentifier>{6803489B-B275-0512-8D8B-D30728E17A76}</UniqueIdentifier>
@@ -2667,7 +2667,7 @@
     <ClInclude Include="..\..\Source\MasterComponent.h">
       <Filter>NetworkGraphicsDemo\Source</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\Source\SlaveComponent.h">
+    <ClInclude Include="..\..\Source\ClientComponent.h">
       <Filter>NetworkGraphicsDemo\Source</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\SharedCanvas.h">

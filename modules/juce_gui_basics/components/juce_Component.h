@@ -936,6 +936,19 @@ public:
     */
     bool contains (Point<int> localPoint);
 
+    /** Returns true if a given point lies within this component or one of its children.
+
+        Never override this method! Use hitTest to create custom hit regions.
+
+        @param localPoint    the coordinate to test, relative to this component's top-left.
+        @returns    true if the point is within the component's hit-test area, but only if
+                    that part of the component isn't clipped by its parent component. Note
+                    that this won't take into account any overlapping sibling components
+                    which might be in the way - for that, see reallyContains()
+        @see hitTest, reallyContains, getComponentAt
+    */
+    bool contains (Point<float> localPoint);
+
     /** Returns true if a given point lies in this component, taking any overlapping
         siblings into account.
 
@@ -945,6 +958,16 @@ public:
         @see contains, getComponentAt
     */
     bool reallyContains (Point<int> localPoint, bool returnTrueIfWithinAChild);
+
+    /** Returns true if a given point lies in this component, taking any overlapping
+        siblings into account.
+
+        @param localPoint    the coordinate to test, relative to this component's top-left.
+        @param returnTrueIfWithinAChild     if the point actually lies within a child of this component,
+                                            this determines whether that is counted as a hit.
+        @see contains, getComponentAt
+    */
+    bool reallyContains (Point<float> localPoint, bool returnTrueIfWithinAChild);
 
     /** Returns the component at a certain point within this one.
 
@@ -968,6 +991,17 @@ public:
         @see hitTest, contains, reallyContains
     */
     Component* getComponentAt (Point<int> position);
+
+    /** Returns the component at a certain point within this one.
+
+        @param position  the coordinate to test, relative to this component's top-left.
+        @returns    the component that is at this position - which may be 0, this component,
+                    or one of its children. Note that overlapping siblings that might actually
+                    be in the way are not taken into account by this method - to account for these,
+                    instead call getComponentAt on the top-level parent of this component.
+        @see hitTest, contains, reallyContains
+    */
+    Component* getComponentAt (Point<float> position);
 
     //==============================================================================
     /** Marks the whole component as needing to be redrawn.
@@ -1352,7 +1386,7 @@ public:
           by calling getWantsKeyboardFocus), it gets it.
         - if the component itself doesn't want focus, it will try to pass it
           on to whichever of its children is the default component, as determined by
-          the getDefaultComponent() implemetation of the ComponentTraverser returned
+          the getDefaultComponent() implementation of the ComponentTraverser returned
           by createKeyboardFocusTraverser().
         - if none of its children want focus at all, it will pass it up to its
           parent instead, unless it's a top-level component without a parent,
@@ -1393,7 +1427,7 @@ public:
     /** Tries to move the keyboard focus to one of this component's siblings.
 
         This will try to move focus to either the next or previous component, as
-        determined by the getNextComponent() and getPreviousComponent() implemetations
+        determined by the getNextComponent() and getPreviousComponent() implementations
         of the ComponentTraverser returned by createKeyboardFocusTraverser().
 
         This is the method that is used when shifting focus by pressing the tab key.
@@ -2474,7 +2508,6 @@ private:
 
     //==============================================================================
     friend class ComponentPeer;
-    friend class MouseInputSource;
     friend class MouseInputSourceInternal;
 
    #ifndef DOXYGEN
@@ -2573,10 +2606,6 @@ private:
     void giveAwayKeyboardFocusInternal (bool sendFocusLossEvent);
     void sendEnablementChangeMessage();
     void sendVisibilityChangeMessage();
-
-    bool containsInternal (Point<float>);
-    bool reallyContainsInternal (Point<float>, bool);
-    Component* getComponentAtInternal (Point<float>);
 
     struct ComponentHelpers;
     friend struct ComponentHelpers;

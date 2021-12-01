@@ -48,7 +48,6 @@ JUCE_BEGIN_NO_SANITIZE ("vptr")
 #include "../utility/juce_IncludeSystemHeaders.h"
 #include "../utility/juce_IncludeModuleHeaders.h"
 #include "../utility/juce_WindowsHooks.h"
-#include "../utility/juce_FakeMouseMoveGenerator.h"
 #include "../utility/juce_LinuxMessageThread.h"
 #include <juce_audio_processors/format_types/juce_LegacyAudioParameter.cpp>
 #include <juce_audio_processors/format_types/juce_VST3Common.h>
@@ -824,20 +823,17 @@ public:
 
         bool setNormalized (Vst::ParamValue v) override
         {
-            auto programValue = roundToInt (toPlain (v));
+            const auto programValue = getProgramValueFromNormalised (v);
 
-            if (isPositiveAndBelow (programValue, owner.getNumPrograms()))
+            if (programValue != owner.getCurrentProgram())
+                owner.setCurrentProgram (programValue);
+
+            if (valueNormalized != v)
             {
-                if (programValue != owner.getCurrentProgram())
-                    owner.setCurrentProgram (programValue);
+                valueNormalized = v;
+                changed();
 
-                if (valueNormalized != v)
-                {
-                    valueNormalized = v;
-                    changed();
-
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -870,8 +866,13 @@ public:
             return String (CharPointer_UTF16 (reinterpret_cast<const CharPointer_UTF16::CharType*> (text)));
         }
 
-        Vst::ParamValue toPlain (Vst::ParamValue v) const override       { return v * (info.stepCount + 1); }
-        Vst::ParamValue toNormalized (Vst::ParamValue v) const override  { return v / (info.stepCount + 1); }
+        Steinberg::int32 getProgramValueFromNormalised (Vst::ParamValue v) const
+        {
+            return jmin (info.stepCount, (Steinberg::int32) (v * (info.stepCount + 1)));
+        }
+
+        Vst::ParamValue toPlain (Vst::ParamValue v) const override       { return getProgramValueFromNormalised (v); }
+        Vst::ParamValue toNormalized (Vst::ParamValue v) const override  { return v / info.stepCount; }
 
     private:
         AudioProcessor& owner;
@@ -1927,8 +1928,6 @@ private:
             {
                 setOpaque (true);
                 setBroughtToFrontOnMouseClick (true);
-
-                ignoreUnused (fakeMouseGenerator);
             }
 
             ~ContentWrapperComponent() override
@@ -2098,7 +2097,6 @@ private:
         private:
             JuceVST3Editor& owner;
             std::unique_ptr<EditorHostContext> editorHostContext;
-            FakeMouseMoveGenerator fakeMouseGenerator;
             Rectangle<int> lastBounds;
             bool resizingChild = false, resizingParent = false;
 
@@ -2743,51 +2741,14 @@ public:
         info.frameRate = [&]
         {
             if ((processContext.state & Vst::ProcessContext::kSmpteValid) == 0)
-                return fpsUnknown;
+                return FrameRate();
 
-            const auto interpretFlags = [&] (FrameRateType basicRate,
-                                             FrameRateType pullDownRate,
-                                             FrameRateType dropRate,
-                                             FrameRateType pullDownDropRate)
-            {
-                switch (processContext.frameRate.flags & (Vst::FrameRate::kPullDownRate | Vst::FrameRate::kDropRate))
-                {
-                    case Vst::FrameRate::kPullDownRate | Vst::FrameRate::kDropRate:
-                        return pullDownDropRate;
-
-                    case Vst::FrameRate::kPullDownRate:
-                        return pullDownRate;
-
-                    case Vst::FrameRate::kDropRate:
-                        return dropRate;
-                }
-
-                return basicRate;
-            };
-
-            switch (processContext.frameRate.framesPerSecond)
-            {
-                case 24:
-                    return interpretFlags (fps24, fps23976, fps24, fps23976);
-
-                case 25:
-                    return interpretFlags (fps25, fps25, fps25, fps25);
-
-                case 30:
-                    return interpretFlags (fps30, fps2997, fps30drop, fps2997drop);
-
-                case 60:
-                    return interpretFlags (fps60, fps60, fps60drop, fps60drop);
-            }
-
-            return fpsUnknown;
+            return FrameRate().withBaseRate ((int) processContext.frameRate.framesPerSecond)
+                              .withDrop ((processContext.frameRate.flags & Vst::FrameRate::kDropRate) != 0)
+                              .withPullDown ((processContext.frameRate.flags & Vst::FrameRate::kPullDownRate) != 0);
         }();
 
-        const auto baseFps = (double) processContext.frameRate.framesPerSecond;
-        const auto effectiveFps = (processContext.frameRate.flags & Vst::FrameRate::kPullDownRate) != 0
-                                ? baseFps * 1000.0 / 1001.0
-                                : baseFps;
-        info.editOriginTime = (double) processContext.smpteOffsetSubframes / (80.0 * effectiveFps);
+        info.editOriginTime = (double) processContext.smpteOffsetSubframes / (80.0 * info.frameRate.getEffectiveRate());
 
         return true;
     }

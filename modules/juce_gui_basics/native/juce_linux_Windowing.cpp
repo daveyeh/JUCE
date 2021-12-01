@@ -333,18 +333,30 @@ public:
     void setParentWindow (::Window newParent)          { parentWindow = newParent; }
 
     //==============================================================================
+    bool isConstrainedNativeWindow() const
+    {
+        return constrainer != nullptr
+            && (styleFlags & (windowHasTitleBar | windowIsResizable)) == (windowHasTitleBar | windowIsResizable)
+            && ! isKioskMode();
+    }
+
     void updateWindowBounds()
     {
-        jassert (windowH != 0);
-        if (windowH != 0)
+        if (windowH == 0)
         {
-            auto physicalBounds = XWindowSystem::getInstance()->getWindowBounds (windowH, parentWindow);
-
-            updateScaleFactorFromNewBounds (physicalBounds, true);
-
-            bounds = parentWindow == 0 ? Desktop::getInstance().getDisplays().physicalToLogical (physicalBounds)
-                                       : physicalBounds / currentScaleFactor;
+            jassertfalse;
+            return;
         }
+
+        if (isConstrainedNativeWindow())
+            XWindowSystem::getInstance()->updateConstraints (windowH);
+
+        auto physicalBounds = XWindowSystem::getInstance()->getWindowBounds (windowH, parentWindow);
+
+        updateScaleFactorFromNewBounds (physicalBounds, true);
+
+        bounds = parentWindow == 0 ? Desktop::getInstance().getDisplays().physicalToLogical (physicalBounds)
+                                   : physicalBounds / currentScaleFactor;
     }
 
     void updateBorderSize()
@@ -636,27 +648,46 @@ void MouseInputSource::setRawMousePosition (Point<float> newPosition)
 }
 
 //==============================================================================
-void* CustomMouseCursorInfo::create() const
+class MouseCursor::PlatformSpecificHandle
 {
-    return XWindowSystem::getInstance()->createCustomMouseCursorInfo (image, hotspot);
-}
+public:
+    explicit PlatformSpecificHandle (const MouseCursor::StandardCursorType type)
+        : cursorHandle (makeHandle (type)) {}
 
-void MouseCursor::deleteMouseCursor (void* cursorHandle, bool)
-{
-    if (cursorHandle != nullptr)
-        XWindowSystem::getInstance()->deleteMouseCursor (cursorHandle);
-}
+    explicit PlatformSpecificHandle (const CustomMouseCursorInfo& info)
+        : cursorHandle (makeHandle (info)) {}
 
-void* MouseCursor::createStandardMouseCursor (MouseCursor::StandardCursorType type)
-{
-    return XWindowSystem::getInstance()->createStandardMouseCursor (type);
-}
+    ~PlatformSpecificHandle()
+    {
+        if (cursorHandle != Cursor{})
+            XWindowSystem::getInstance()->deleteMouseCursor (cursorHandle);
+    }
 
-void MouseCursor::showInWindow (ComponentPeer* peer) const
-{
-    if (peer != nullptr)
-        XWindowSystem::getInstance()->showCursor ((::Window) peer->getNativeHandle(), getHandle());
-}
+    static void showInWindow (PlatformSpecificHandle* handle, ComponentPeer* peer)
+    {
+        const auto cursor = handle != nullptr ? handle->cursorHandle : Cursor{};
+
+        if (peer != nullptr)
+            XWindowSystem::getInstance()->showCursor ((::Window) peer->getNativeHandle(), cursor);
+    }
+
+private:
+    static Cursor makeHandle (const CustomMouseCursorInfo& info)
+    {
+        return XWindowSystem::getInstance()->createCustomMouseCursorInfo (info.image, info.hotspot);
+    }
+
+    static Cursor makeHandle (MouseCursor::StandardCursorType type)
+    {
+        return XWindowSystem::getInstance()->createStandardMouseCursor (type);
+    }
+
+    Cursor cursorHandle;
+
+    //==============================================================================
+    JUCE_DECLARE_NON_COPYABLE (PlatformSpecificHandle)
+    JUCE_DECLARE_NON_MOVEABLE (PlatformSpecificHandle)
+};
 
 //==============================================================================
 static LinuxComponentPeer* getPeerForDragEvent (Component* sourceComp)
