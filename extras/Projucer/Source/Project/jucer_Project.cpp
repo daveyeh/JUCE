@@ -958,6 +958,7 @@ void Project::licenseStateChanged()
 void Project::changeListenerCallback (ChangeBroadcaster*)
 {
     updateJUCEPathWarning();
+    changed();
 }
 
 void Project::availableModulesChanged (AvailableModulesList* listThatHasChanged)
@@ -1091,9 +1092,9 @@ void Project::valueTreePropertyChanged (ValueTree& tree, const Identifier& prope
         {
             updateModuleWarnings();
         }
-
-        changed();
     }
+
+    changed();
 }
 
 void Project::valueTreeChildAdded (ValueTree& parent, ValueTree& child)
@@ -2000,7 +2001,7 @@ ValueTree Project::getConfigNode()
     return projectRoot.getOrCreateChildWithName (Ids::JUCEOPTIONS, nullptr);
 }
 
-ValueWithDefault Project::getConfigFlag (const String& name)
+ValueTreePropertyWithDefault Project::getConfigFlag (const String& name)
 {
     auto configNode = getConfigNode();
 

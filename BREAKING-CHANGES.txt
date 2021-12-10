@@ -1,8 +1,51 @@
 JUCE breaking changes
 =====================
 
-develop
-=======
+Version 6.1.3
+=============
+
+Change
+------
+The format specific structs of ExtensionsVisitor now return pointers to forward
+declared types instead of `void*`. For this purpose the `struct AEffect;`
+forward declaration was placed inside the global namespace.
+
+Possible Issues
+---------------
+User code that includes the VST headers inside a namespace may fail to build,
+because the forward declared type can collide with the contents of `aeffect.h`.
+
+Workaround
+----------
+The collision can be avoided by placing a `struct AEffect;` forward declaration
+in the same namespace where the VST headers are included. The forward
+declaration must come before the inclusion.
+
+Rationale
+---------
+Using the forward declared types eliminates the need for error prone casting
+at the site where the ExtensionsVisitor facility is used.
+
+
+Change
+------
+ListBox::createSnapshotOfRows now returns ScaledImage instead of Image.
+
+Possible Issues
+---------------
+User code that overrides this function will fail to build.
+
+Workaround
+----------
+To emulate the old behaviour, simply wrap the Image that was previous returned
+into a ScaledImage and return that instead.
+
+Rationale
+---------
+Returning a ScaledImage allows the overriding function to specify the scale
+at which the image should be drawn. Returning an oversampled image will provide
+smoother-looking results on high resolution displays.
+
 
 Change
 ------
@@ -329,7 +372,7 @@ that the behaviour is the same.
 Rationale
 ---------
 The ownership of this method is now clearer as the previous code relied on the
-caller deleting the object. The name has changed to accomodate the new
+caller deleting the object. The name has changed to accommodate the new
 `Component::createFocusTraverser()` method that returns an object for
 determining basic focus traversal, of which keyboard focus is generally a
 subset.
@@ -442,8 +485,8 @@ Change
 ------
 CharacterFunctions::readDoubleValue now returns values consistent with other
 C++ number parsing libraries. Parsing values smaller than the minimum number
-respresentable in a double will return (+/-)0.0 and parsing values larger than
-the maximum number respresentable in a double will return (+/-)inf.
+representable in a double will return (+/-)0.0 and parsing values larger than
+the maximum number representable in a double will return (+/-)inf.
 
 Possible Issues
 ---------------
@@ -700,8 +743,8 @@ Limited.
 
 Possible Issues
 ---------------
-Exising projects, particularly Android, may need to be resaved by the Projucer
-and have the old build artifacts deleted before they will build.
+Existing projects, particularly Android, may need to be resaved by the Projucer
+and have the old build artefacts deleted before they will build.
 
 Workaround
 ----------
@@ -755,7 +798,7 @@ Update the subproject path in the Projucer.
 
 Rationale
 ---------
-Most other Xcode specific paths are specified reltive to the build directory.
+Most other Xcode specific paths are specified relative to the build directory.
 This change brings the Xcode subproject path in line with the rest of the
 configuration.
 
@@ -1105,7 +1148,7 @@ Multiple changes to low-level, non-public JNI and Android APIs.
 Possible Issues
 ---------------
 If you were using any non-public, low-level JNI macros, calling java code or
-recieving JNI callbacks, then your code will probably no longer work. See the
+receiving JNI callbacks, then your code will probably no longer work. See the
 forum for further details.
 
 Workaround
@@ -1134,7 +1177,7 @@ Rationale
 ---------
 Less than 0.5% of all devices in the world run versions of Android older than
 Android 4.1. In the interest of keeping JUCE code clean and lean, we must
-depricate support for very old Android versions from time to time.
+deprecate support for very old Android versions from time to time.
 
 
 Version 5.4.0
@@ -1830,7 +1873,7 @@ or
 Rationale
 ---------
 Previously, PopupMenus would not scale if the GUI of the target component (or
-any of it’s parents) were scaled. The only way to scale PopupMenus was via the
+any of its parents) were scaled. The only way to scale PopupMenus was via the
 global scaling factor. This had several drawbacks as the global scaling factor
 would scale everything. This was especially problematic in plug-in editors.
 
@@ -1935,7 +1978,7 @@ then you will need to update your plug-in to the new multi-bus API. Pre JUCE
 4.0.0 plug-ins are not affected apart from other breaking changes listed in
 this document.
 
-Woraround
+Workaround
 ---------
 None.
 
