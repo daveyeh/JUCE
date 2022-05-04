@@ -64,14 +64,17 @@ namespace build_tools
                 VSTPlugIn         = 10,
                 VST3PlugIn        = 11,
                 AAXPlugIn         = 12,
-                RTASPlugIn        = 13,
+
                 AudioUnitPlugIn   = 14,
                 AudioUnitv3PlugIn = 15,
                 StandalonePlugIn  = 16,
                 UnityPlugIn       = 17,
+                LV2PlugIn         = 18,
 
                 SharedCodeTarget  = 20, // internal
                 AggregateTarget   = 21,
+
+                LV2TurtleProgram  = 25, // internal
 
                 unspecified       = 30
             };
@@ -103,10 +106,11 @@ namespace build_tools
                     case StandalonePlugIn:  return "Standalone Plugin";
                     case AudioUnitv3PlugIn: return "AUv3 AppExtension";
                     case AAXPlugIn:         return "AAX";
-                    case RTASPlugIn:        return "RTAS";
                     case UnityPlugIn:       return "Unity Plugin";
+                    case LV2PlugIn:         return "LV2 Plugin";
                     case SharedCodeTarget:  return "Shared Code";
                     case AggregateTarget:   return "All";
+                    case LV2TurtleProgram:  return "LV2 Manifest Helper";
                     case unspecified:
                     default:                break;
                 }
@@ -116,20 +120,21 @@ namespace build_tools
 
             static Type typeFromName (const String& name)
             {
-                if (name == "App") return Type::GUIApp;
-                if (name == "ConsoleApp") return Type::ConsoleApp;
-                if (name == "Static Library") return Type::StaticLibrary;
-                if (name == "Dynamic Library") return Type::DynamicLibrary;
-                if (name == "VST") return Type::VSTPlugIn;
-                if (name == "VST3") return Type::VST3PlugIn;
-                if (name == "AU") return Type::AudioUnitPlugIn;
-                if (name == "Standalone Plugin") return Type::StandalonePlugIn;
-                if (name == "AUv3 AppExtension") return Type::AudioUnitv3PlugIn;
-                if (name == "AAX") return Type::AAXPlugIn;
-                if (name == "RTAS") return Type::RTASPlugIn;
-                if (name == "Unity Plugin") return Type::UnityPlugIn;
-                if (name == "Shared Code") return Type::SharedCodeTarget;
-                if (name == "All") return Type::AggregateTarget;
+                if (name == "App")                  return Type::GUIApp;
+                if (name == "ConsoleApp")           return Type::ConsoleApp;
+                if (name == "Static Library")       return Type::StaticLibrary;
+                if (name == "Dynamic Library")      return Type::DynamicLibrary;
+                if (name == "VST")                  return Type::VSTPlugIn;
+                if (name == "VST3")                 return Type::VST3PlugIn;
+                if (name == "AU")                   return Type::AudioUnitPlugIn;
+                if (name == "Standalone Plugin")    return Type::StandalonePlugIn;
+                if (name == "AUv3 AppExtension")    return Type::AudioUnitv3PlugIn;
+                if (name == "AAX")                  return Type::AAXPlugIn;
+                if (name == "Unity Plugin")         return Type::UnityPlugIn;
+                if (name == "LV2 Plugin")           return Type::LV2PlugIn;
+                if (name == "Shared Code")          return Type::SharedCodeTarget;
+                if (name == "All")                  return Type::AggregateTarget;
+                if (name == "LV2 Manifest Helper")  return Type::LV2TurtleProgram;
 
                 jassertfalse;
                 return Type::ConsoleApp;
@@ -149,9 +154,10 @@ namespace build_tools
                     case StandalonePlugIn:  return executable;
                     case AudioUnitv3PlugIn: return macOSAppex;
                     case AAXPlugIn:         return pluginBundle;
-                    case RTASPlugIn:        return pluginBundle;
                     case UnityPlugIn:       return pluginBundle;
+                    case LV2PlugIn:         return pluginBundle;
                     case SharedCodeTarget:  return staticLibrary;
+                    case LV2TurtleProgram:  return executable;
                     case AggregateTarget:
                     case unspecified:
                     default:                break;
@@ -231,11 +237,12 @@ namespace build_tools
                 case Target::VSTPlugIn:
                 case Target::VST3PlugIn:
                 case Target::AAXPlugIn:
-                case Target::RTASPlugIn:
                 case Target::AudioUnitPlugIn:
                 case Target::AudioUnitv3PlugIn:
                 case Target::StandalonePlugIn:
                 case Target::UnityPlugIn:
+                case Target::LV2PlugIn:
+                case Target::LV2TurtleProgram:
                 case Target::SharedCodeTarget:
                 case Target::AggregateTarget:
                     return true;

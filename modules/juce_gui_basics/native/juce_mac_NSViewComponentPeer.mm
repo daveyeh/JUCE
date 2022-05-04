@@ -1089,14 +1089,17 @@ public:
 
         auto dispatchRectangles = [this] ()
         {
-            if (metalRenderer != nullptr)
+            if (@available (macOS 10.14, *))
             {
-                return metalRenderer->drawRectangleList ((CAMetalLayer*) view.layer,
-                                                         (float) [[view window] backingScaleFactor],
-                                                         view.frame,
-                                                         getComponent(),
-                                                         [this] (CGContextRef ctx, CGRect r) { drawRectWithContext (ctx, r); },
-                                                         deferredRepaints);
+                if (metalRenderer != nullptr)
+                {
+                    return metalRenderer->drawRectangleList ((CAMetalLayer*) view.layer,
+                                                             (float) [[view window] backingScaleFactor],
+                                                             view.frame,
+                                                             getComponent(),
+                                                             [this] (CGContextRef ctx, CGRect r) { drawRectWithContext (ctx, r); },
+                                                             deferredRepaints);
+                }
             }
 
             for (auto& i : deferredRepaints)
@@ -1382,35 +1385,7 @@ public:
         // has a Z label). Therefore, we need to query the current keyboard
         // layout to figure out what character the key would have produced
         // if the shift key was not pressed
-        String unmodified;
-
-       #if JUCE_SUPPORT_CARBON
-        if (auto currentKeyboard = CFUniquePtr<TISInputSourceRef> (TISCopyCurrentKeyboardInputSource()))
-        {
-            if (auto layoutData = (CFDataRef) TISGetInputSourceProperty (currentKeyboard,
-                                                                         kTISPropertyUnicodeKeyLayoutData))
-            {
-                if (auto* layoutPtr = (const UCKeyboardLayout*) CFDataGetBytePtr (layoutData))
-                {
-                    UInt32 keysDown = 0;
-                    UniChar buffer[4];
-                    UniCharCount actual;
-
-                    if (UCKeyTranslate (layoutPtr, [ev keyCode], kUCKeyActionDown, 0, LMGetKbdType(),
-                                        kUCKeyTranslateNoDeadKeysBit, &keysDown, sizeof (buffer) / sizeof (UniChar),
-                                        &actual, buffer) == 0)
-                        unmodified = String (CharPointer_UTF16 (reinterpret_cast<CharPointer_UTF16::CharType*> (buffer)), 4);
-                }
-            }
-        }
-
-        // did the above layout conversion fail
-        if (unmodified.isEmpty())
-       #endif
-        {
-            unmodified = nsStringToJuce ([ev charactersIgnoringModifiers]);
-        }
-
+        String unmodified = nsStringToJuce ([ev charactersIgnoringModifiers]);
         auto keyCode = (int) unmodified[0];
 
         if (keyCode == 0x19) // (backwards-tab)
@@ -1625,7 +1600,7 @@ public:
 
     void textInputRequired (Point<int>, TextInputTarget&) override {}
 
-    void dismissPendingTextInput() override
+    void closeInputMethodContext() override
     {
         stringBeingComposed.clear();
         const auto* inputContext = [NSTextInputContext currentInputContext];
@@ -1845,10 +1820,13 @@ private:
 
     void setFullScreenSizeConstraints (const ComponentBoundsConstrainer& c)
     {
-        const auto minSize = NSMakeSize (static_cast<float> (c.getMinimumWidth()),
-                                         0.0f);
-        [window setMinFullScreenContentSize: minSize];
-        [window setMaxFullScreenContentSize: NSMakeSize (100000, 100000)];
+        if (@available (macOS 10.11, *))
+        {
+            const auto minSize = NSMakeSize (static_cast<float> (c.getMinimumWidth()),
+                                             0.0f);
+            [window setMinFullScreenContentSize: minSize];
+            [window setMaxFullScreenContentSize: NSMakeSize (100000, 100000)];
+        }
     }
 
     //==============================================================================
@@ -1871,7 +1849,7 @@ private:
 
     void updateCVDisplayLinkScreen()
     {
-        auto viewDisplayID = (CGDirectDisplayID) [window.screen.deviceDescription[@"NSScreenNumber"] unsignedIntegerValue];
+        auto viewDisplayID = (CGDirectDisplayID) [[window.screen.deviceDescription objectForKey: @"NSScreenNumber"] unsignedIntegerValue];
         auto result = CVDisplayLinkSetCurrentCGDisplay (displayLink, viewDisplayID);
         jassertquiet (result == kCVReturnSuccess);
     }

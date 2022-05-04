@@ -273,13 +273,6 @@ void ProjectExporter::createPropertyEditors (PropertyListBuilder& props)
                        "If you're building an AAX plug-in, this must be the folder containing the AAX SDK. This can be an absolute path, or a path relative to the Projucer project file.");
         }
 
-        if (shouldBuildTargetType (build_tools::ProjectType::Target::RTASPlugIn) && project.shouldBuildRTAS())
-        {
-            props.add (new FilePathPropertyComponent (rtasPathValueWrapper.getWrappedValueTreePropertyWithDefault(), "RTAS SDK Folder", true,
-                                                      getTargetOSForExporter() == TargetOS::getThisOS(), "*", project.getProjectFolder()),
-                       "If you're building an RTAS plug-in, this must be the folder containing the RTAS SDK. This can be an absolute path, or a path relative to the Projucer project file.");
-        }
-
         props.add (new TextPropertyComponent (extraPPDefsValue, "Extra Preprocessor Definitions", 32768, true),
                    "Extra preprocessor definitions. Use the form \"NAME1=value NAME2=value\", using whitespace, commas, "
                    "or new-lines to separate the items - to include a space or comma in a definition, precede it with a backslash.");
@@ -340,7 +333,7 @@ void ProjectExporter::createIconProperties (PropertyListBuilder& props)
 //==============================================================================
 void ProjectExporter::addSettingsForProjectType (const build_tools::ProjectType& type)
 {
-    addVSTPathsIfPluginOrHost();
+    addExtraIncludePathsIfPluginOrHost();
 
     if (type.isAudioPlugin())
         addCommonAudioPluginSettings();
@@ -348,15 +341,47 @@ void ProjectExporter::addSettingsForProjectType (const build_tools::ProjectType&
     addPlatformSpecificSettingsForProjectType (type);
 }
 
-void ProjectExporter::addVSTPathsIfPluginOrHost()
+void ProjectExporter::addExtraIncludePathsIfPluginOrHost()
 {
-    if (((shouldBuildTargetType (build_tools::ProjectType::Target::VSTPlugIn) && project.shouldBuildVST()) || project.isVSTPluginHost())
-         || ((shouldBuildTargetType (build_tools::ProjectType::Target::VST3PlugIn) && project.shouldBuildVST3()) || project.isVST3PluginHost()))
+    using Target = build_tools::ProjectType::Target;
+
+    if (((shouldBuildTargetType (Target::VSTPlugIn) && project.shouldBuildVST()) || project.isVSTPluginHost())
+         || ((shouldBuildTargetType (Target::VST3PlugIn) && project.shouldBuildVST3()) || project.isVST3PluginHost()))
     {
         addLegacyVSTFolderToPathIfSpecified();
 
         if (! project.isConfigFlagEnabled ("JUCE_CUSTOM_VST3_SDK"))
             addToExtraSearchPaths (getInternalVST3SDKPath(), 0);
+    }
+
+    const auto lv2BasePath = getModuleFolderRelativeToProject ("juce_audio_processors").getChildFile ("format_types")
+                                                                                       .getChildFile ("LV2_SDK");
+
+    if ((shouldBuildTargetType (Target::LV2PlugIn) && project.shouldBuildLV2()) || project.isLV2PluginHost())
+    {
+        const std::vector<const char*> paths[] { { "" },
+                                                 { "lv2" },
+                                                 { "serd" },
+                                                 { "sord" },
+                                                 { "sord", "src" },
+                                                 { "sratom" },
+                                                 { "lilv" },
+                                                 { "lilv", "src" } };
+
+        for (const auto& components : paths)
+        {
+            const auto appendComponent = [] (const build_tools::RelativePath& f, const char* component)
+            {
+                return f.getChildFile (component);
+            };
+
+            const auto includePath = std::accumulate (components.begin(),
+                                                      components.end(),
+                                                      lv2BasePath,
+                                                      appendComponent);
+
+            addToExtraSearchPaths (includePath, 0);
+        }
     }
 }
 
@@ -364,9 +389,7 @@ void ProjectExporter::addCommonAudioPluginSettings()
 {
     if (shouldBuildTargetType (build_tools::ProjectType::Target::AAXPlugIn))
         addAAXFoldersToPath();
-
-    // Note: RTAS paths are platform-dependent, impl -> addPlatformSpecificSettingsForProjectType
- }
+}
 
 void ProjectExporter::addLegacyVSTFolderToPathIfSpecified()
 {
@@ -423,16 +446,15 @@ StringPairArray ProjectExporter::getAllPreprocessorDefs() const
 
 void ProjectExporter::addTargetSpecificPreprocessorDefs (StringPairArray& defs, const build_tools::ProjectType::Target::Type targetType) const
 {
-    std::pair<String, build_tools::ProjectType::Target::Type> targetFlags[] = {
-        {"JucePlugin_Build_VST",        build_tools::ProjectType::Target::VSTPlugIn},
-        {"JucePlugin_Build_VST3",       build_tools::ProjectType::Target::VST3PlugIn},
-        {"JucePlugin_Build_AU",         build_tools::ProjectType::Target::AudioUnitPlugIn},
-        {"JucePlugin_Build_AUv3",       build_tools::ProjectType::Target::AudioUnitv3PlugIn},
-        {"JucePlugin_Build_RTAS",       build_tools::ProjectType::Target::RTASPlugIn},
-        {"JucePlugin_Build_AAX",        build_tools::ProjectType::Target::AAXPlugIn},
-        {"JucePlugin_Build_Standalone", build_tools::ProjectType::Target::StandalonePlugIn},
-        {"JucePlugin_Build_Unity",      build_tools::ProjectType::Target::UnityPlugIn}
-    };
+    using Target = build_tools::ProjectType::Target::Type;
+    const std::pair<const char*, Target> targetFlags[] { { "JucePlugin_Build_VST",        Target::VSTPlugIn },
+                                                         { "JucePlugin_Build_VST3",       Target::VST3PlugIn },
+                                                         { "JucePlugin_Build_AU",         Target::AudioUnitPlugIn },
+                                                         { "JucePlugin_Build_AUv3",       Target::AudioUnitv3PlugIn },
+                                                         { "JucePlugin_Build_AAX",        Target::AAXPlugIn },
+                                                         { "JucePlugin_Build_Standalone", Target::StandalonePlugIn },
+                                                         { "JucePlugin_Build_Unity",      Target::UnityPlugIn },
+                                                         { "JucePlugin_Build_LV2",        Target::LV2PlugIn } };
 
     if (targetType == build_tools::ProjectType::Target::SharedCodeTarget)
     {
@@ -855,17 +877,21 @@ ProjectExporter::BuildConfiguration::BuildConfiguration (Project& p, const Value
     llvmFlags.common.addArray ({
         "-Wshorten-64-to-32", "-Wconversion", "-Wint-conversion",
         "-Wconditional-uninitialized", "-Wconstant-conversion", "-Wbool-conversion",
-        "-Wextra-semi", "-Wshift-sign-overflow", "-Wno-missing-field-initializers",
-        "-Wshadow-all", "-Wnullable-to-nonnull-conversion"
+        "-Wextra-semi", "-Wshift-sign-overflow",
+        "-Wshadow-all", "-Wnullable-to-nonnull-conversion",
+        "-Wmissing-prototypes"
     });
     llvmFlags.cpp.addArray ({
         "-Wunused-private-field", "-Winconsistent-missing-destructor-override"
+    });
+    llvmFlags.objc.addArray ({
+        "-Wunguarded-availability", "-Wunguarded-availability-new"
     });
 
     auto& gccFlags = recommendedCompilerWarningFlags[CompilerNames::gcc] = BuildConfiguration::CompilerWarningFlags::getRecommendedForGCCAndLLVM();
     gccFlags.common.addArray ({
         "-Wextra", "-Wsign-compare", "-Wno-implicit-fallthrough", "-Wno-maybe-uninitialized",
-        "-Wno-missing-field-initializers", "-Wredundant-decls", "-Wno-strict-overflow",
+        "-Wredundant-decls", "-Wno-strict-overflow",
         "-Wshadow"
     });
 }

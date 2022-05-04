@@ -144,7 +144,6 @@ public:
 
     String getVSTLegacyPathString() const                 { return vstLegacyPathValueWrapper.getCurrentValue(); }
     String getAAXPathString() const                       { return aaxPathValueWrapper.getCurrentValue(); }
-    String getRTASPathString() const                      { return rtasPathValueWrapper.getCurrentValue(); }
 
     // NB: this is the path to the parent "modules" folder that contains the named module, not the
     // module folder itself.
@@ -180,6 +179,13 @@ public:
     // An exception that can be thrown by the create() method.
     void createPropertyEditors (PropertyListBuilder&);
     void addSettingsForProjectType (const build_tools::ProjectType&);
+
+    build_tools::RelativePath getLV2TurtleDumpProgramSource() const
+    {
+        return getModuleFolderRelativeToProject ("juce_audio_plugin_client")
+               .getChildFile ("LV2")
+               .getChildFile ("juce_LV2TurtleDumpProgram.cpp");
+    }
 
     //==============================================================================
     void copyMainGroupFromProject();
@@ -282,8 +288,7 @@ public:
                 return result;
             }
 
-            StringArray common;
-            StringArray cpp;
+            StringArray common, cpp, objc;
         };
 
         CompilerWarningFlags getRecommendedCompilerWarningFlags() const;
@@ -400,7 +405,7 @@ protected:
     const File projectFolder;
 
     //==============================================================================
-    ValueTreePropertyWithDefaultWrapper vstLegacyPathValueWrapper, rtasPathValueWrapper, aaxPathValueWrapper;
+    ValueTreePropertyWithDefaultWrapper vstLegacyPathValueWrapper, aaxPathValueWrapper;
 
     ValueTreePropertyWithDefault targetLocationValue, extraCompilerFlagsValue, extraLinkerFlagsValue, externalLibrariesValue,
                                  userNotesValue, gnuExtensionsValue, bigIconValue, smallIconValue, extraPPDefsValue;
@@ -460,9 +465,8 @@ private:
                                                 : name + suffix;
     }
 
-    void createDependencyPathProperties (PropertyListBuilder&);
     void createIconProperties (PropertyListBuilder&);
-    void addVSTPathsIfPluginOrHost();
+    void addExtraIncludePathsIfPluginOrHost();
     void addCommonAudioPluginSettings();
     void addLegacyVSTFolderToPathIfSpecified();
     build_tools::RelativePath getInternalVST3SDKPath();

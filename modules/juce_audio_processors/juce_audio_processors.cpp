@@ -33,15 +33,9 @@
 
 #include "juce_audio_processors.h"
 #include <juce_gui_extra/juce_gui_extra.h>
+#include <juce_core/containers/juce_Optional.h>
 
 //==============================================================================
-#if JUCE_MAC
- #if JUCE_SUPPORT_CARBON && (JUCE_PLUGINHOST_VST || JUCE_PLUGINHOST_AU)
-  #include <Carbon/Carbon.h>
-  #include <juce_gui_extra/native/juce_mac_CarbonViewWrapperComponent.h>
- #endif
-#endif
-
 #if (JUCE_PLUGINHOST_VST || JUCE_PLUGINHOST_VST3) && (JUCE_LINUX || JUCE_BSD)
  #include <X11/Xlib.h>
  #include <X11/Xutil.h>
@@ -49,7 +43,7 @@
  #undef KeyPress
 #endif
 
-#if ! JUCE_WINDOWS && ! JUCE_MAC && ! JUCE_LINUX && ! JUCE_BSD
+#if ! JUCE_WINDOWS && ! JUCE_MAC && ! JUCE_LINUX
  #undef JUCE_PLUGINHOST_VST3
  #define JUCE_PLUGINHOST_VST3 0
 #endif
@@ -58,11 +52,10 @@
  #include <AudioUnit/AudioUnit.h>
 #endif
 
-//==============================================================================
 namespace juce
 {
 
-#if JUCE_PLUGINHOST_VST || (JUCE_PLUGINHOST_LADSPA && (JUCE_LINUX || JUCE_BSD))
+#if JUCE_PLUGINHOST_VST || (JUCE_PLUGINHOST_LADSPA && JUCE_LINUX)
 
 static bool arrayContainsPlugin (const OwnedArray<PluginDescription>& list,
                                  const PluginDescription& desc)
@@ -75,6 +68,26 @@ static bool arrayContainsPlugin (const OwnedArray<PluginDescription>& list,
 }
 
 #endif
+
+template <typename Callback>
+void callOnMessageThread (Callback&& callback)
+{
+    if (MessageManager::getInstance()->existsAndIsLockedByCurrentThread())
+    {
+        callback();
+        return;
+    }
+
+    WaitableEvent completionEvent;
+
+    MessageManager::callAsync ([&callback, &completionEvent]
+                               {
+                                   callback();
+                                   completionEvent.signal();
+                               });
+
+    completionEvent.wait();
+}
 
 #if JUCE_MAC
 
@@ -176,6 +189,7 @@ private:
 
 } // namespace juce
 
+#include "utilities/juce_FlagCache.h"
 #include "format/juce_AudioPluginFormat.cpp"
 #include "format/juce_AudioPluginFormatManager.cpp"
 #include "format_types/juce_LegacyAudioParameter.cpp"
@@ -202,7 +216,11 @@ private:
 #include "utilities/juce_ParameterAttachments.cpp"
 #include "utilities/juce_AudioProcessorValueTreeState.cpp"
 #include "utilities/juce_PluginHostType.cpp"
+#include "utilities/juce_NativeScaleFactorNotifier.cpp"
+
+#include "format_types/juce_LV2PluginFormat.cpp"
 
 #if JUCE_UNIT_TESTS
  #include "format_types/juce_VST3PluginFormat_test.cpp"
+ #include "format_types/juce_LV2PluginFormat_test.cpp"
 #endif

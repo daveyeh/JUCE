@@ -87,6 +87,13 @@
  #define JUCE_PLUGINHOST_LADSPA 0
 #endif
 
+/** Config: JUCE_PLUGINHOST_LV2
+    Enables the LV2 plugin hosting classes.
+ */
+#ifndef JUCE_PLUGINHOST_LV2
+ #define JUCE_PLUGINHOST_LV2 0
+#endif
+
 /** Config: JUCE_CUSTOM_VST3_SDK
     If enabled, the embedded VST3 SDK in JUCE will not be added to the project and instead you should
     add the path to your custom VST3 SDK to the project's header search paths. Most users shouldn't
@@ -100,10 +107,6 @@
 // #error "You need to set either the JUCE_PLUGINHOST_AU and/or JUCE_PLUGINHOST_VST and/or JUCE_PLUGINHOST_VST3 and/or JUCE_PLUGINHOST_LADSPA flags if you're using this module!"
 #endif
 
-#if ! (defined (JUCE_SUPPORT_CARBON) || JUCE_64BIT || JUCE_IOS)
- #define JUCE_SUPPORT_CARBON 1
-#endif
-
 #ifndef JUCE_SUPPORT_LEGACY_AUDIOPROCESSOR
  #define JUCE_SUPPORT_LEGACY_AUDIOPROCESSOR 1
 #endif
@@ -111,6 +114,7 @@
 //==============================================================================
 #include "utilities/juce_VSTCallbackHandler.h"
 #include "utilities/juce_VST3ClientExtensions.h"
+#include "utilities/juce_NativeScaleFactorNotifier.h"
 #include "utilities/juce_ExtensionsVisitor.h"
 #include "processors/juce_AudioProcessorParameter.h"
 #include "processors/juce_HostedAudioProcessorParameter.h"
@@ -128,9 +132,10 @@
 #include "scanning/juce_KnownPluginList.h"
 #include "format_types/juce_AudioUnitPluginFormat.h"
 #include "format_types/juce_LADSPAPluginFormat.h"
+#include "format_types/juce_LV2PluginFormat.h"
+#include "format_types/juce_VST3PluginFormat.h"
 #include "format_types/juce_VSTMidiEventList.h"
 #include "format_types/juce_VSTPluginFormat.h"
-#include "format_types/juce_VST3PluginFormat.h"
 #include "scanning/juce_PluginDirectoryScanner.h"
 #include "scanning/juce_PluginListComponent.h"
 #include "utilities/juce_AudioProcessorParameterWithID.h"
@@ -142,3 +147,8 @@
 #include "utilities/juce_ParameterAttachments.h"
 #include "utilities/juce_AudioProcessorValueTreeState.h"
 #include "utilities/juce_PluginHostType.h"
+
+// This is here to avoid missing-prototype warnings in user code.
+// If you're implementing a plugin, you should supply a body for
+// this function in your own code.
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();

@@ -65,12 +65,13 @@ namespace build_tools
                 return "XPC!";
 
             case Type::AAXPlugIn:
-            case Type::RTASPlugIn:
                 return "TDMw";
 
             case Type::ConsoleApp:
             case Type::StaticLibrary:
             case Type::DynamicLibrary:
+            case Type::LV2PlugIn:
+            case Type::LV2TurtleProgram:
             case Type::SharedCodeTarget:
             case Type::AggregateTarget:
             case Type::unspecified:
@@ -95,12 +96,13 @@ namespace build_tools
                 return "????";
 
             case Type::AAXPlugIn:
-            case Type::RTASPlugIn:
                 return "PTul";
 
             case Type::ConsoleApp:
             case Type::StaticLibrary:
             case Type::DynamicLibrary:
+            case Type::LV2PlugIn:
+            case Type::LV2TurtleProgram:
             case Type::SharedCodeTarget:
             case Type::AggregateTarget:
             case Type::unspecified:
