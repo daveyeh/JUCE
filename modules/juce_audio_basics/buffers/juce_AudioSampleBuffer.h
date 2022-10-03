@@ -339,7 +339,7 @@ public:
 
         @see setNotClear
     */
-    Type* const* getArrayOfWritePointers() noexcept                       { isClear = false; return channels; }
+    Type** getArrayOfWritePointers() noexcept                       { isClear = false; return channels; }
 
     //==============================================================================
     /** Changes the buffer's size or number of channels.
