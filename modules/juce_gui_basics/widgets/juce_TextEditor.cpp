@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -861,6 +868,12 @@ struct TextEditor::TextHolderComponent  : public Component,
 
     TextEditor& owner;
 
+private:
+    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return createIgnoredAccessibilityHandler (*this);
+    }
+
     JUCE_DECLARE_NON_COPYABLE (TextHolderComponent)
 };
 
@@ -887,6 +900,11 @@ struct TextEditor::TextEditorViewport  : public Viewport
     }
 
 private:
+    std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override
+    {
+        return createIgnoredAccessibilityHandler (*this);
+    }
+
     TextEditor& owner;
     int lastWordWrapWidth = 0;
     bool reentrant = false;
@@ -930,10 +948,6 @@ TextEditor::TextEditor (const String& name, juce_wchar passwordChar)
 
 TextEditor::~TextEditor()
 {
-    if (wasFocused)
-        if (auto* peer = getPeer())
-            peer->dismissPendingTextInput();
-
     textValue.removeListener (textHolder);
     textValue.referTo (Value());
 
@@ -1010,7 +1024,15 @@ void TextEditor::setReadOnly (bool shouldBeReadOnly)
         readOnly = shouldBeReadOnly;
         enablementChanged();
         invalidateAccessibilityHandler();
+
+        if (auto* peer = getPeer())
+            peer->refreshTextInputTarget();
     }
+}
+
+void TextEditor::setClicksOutsideDismissVirtualKeyboard (bool newValue)
+{
+    clicksOutsideDismissVirtualKeyboard = newValue;
 }
 
 bool TextEditor::isReadOnly() const noexcept
@@ -1020,7 +1042,7 @@ bool TextEditor::isReadOnly() const noexcept
 
 bool TextEditor::isTextInputActive() const
 {
-    return ! isReadOnly();
+    return ! isReadOnly() && (! clicksOutsideDismissVirtualKeyboard || globalMouseListener.lastMouseDownInEditor());
 }
 
 void TextEditor::setReturnKeyStartsNewLine (bool shouldStartNewLine)
@@ -1142,7 +1164,7 @@ void TextEditor::updateCaretPosition()
     {
         Iterator i (*this);
         caret->setCaretPosition (getCaretRectangle().translated (leftIndent,
-                                                                 topIndent + roundToInt (i.getYOffset())));
+                                                                 topIndent + roundToInt (i.getYOffset())) - getTextOffset());
 
         if (auto* handler = getAccessibilityHandler())
             handler->notifyAccessibilityEvent (AccessibilityEvent::textSelectionChanged);
@@ -1203,6 +1225,7 @@ void TextEditor::clear()
     clearInternal (nullptr);
     checkLayout();
     undoManager.clearUndoHistory();
+    repaint();
 }
 
 void TextEditor::setText (const String& newText, bool sendTextChangeMessage)
@@ -1315,13 +1338,7 @@ void TextEditor::timerCallbackInt()
 void TextEditor::checkFocus()
 {
     if (! wasFocused && hasKeyboardFocus (false) && ! isCurrentlyBlockedByAnotherModalComponent())
-    {
         wasFocused = true;
-
-        if (auto* peer = getPeer())
-            if (! isReadOnly())
-                peer->textInputRequired (peer->globalToLocal (getScreenPosition()), *this);
-    }
 }
 
 void TextEditor::repaintText (Range<int> range)
@@ -1430,18 +1447,13 @@ void TextEditor::scrollEditorToPositionCaret (const int desiredCaretX,
     viewport->setViewPosition (vx, vy);
 }
 
-Rectangle<int> TextEditor::getCaretRectangle()
-{
-    return getCaretRectangleFloat().getSmallestIntegerContainer();
-}
-
-Rectangle<float> TextEditor::getCaretRectangleFloat() const
+Rectangle<int> TextEditor::getCaretRectangleForCharIndex (int index) const
 {
     Point<float> anchor;
     auto cursorHeight = currentFont.getHeight(); // (in case the text is empty and the call below doesn't set this value)
-    getCharPosition (caretPosition, anchor, cursorHeight);
+    getCharPosition (index, anchor, cursorHeight);
 
-    return { anchor.x, anchor.y, 2.0f, cursorHeight };
+    return Rectangle<float> { anchor.x, anchor.y, 2.0f, cursorHeight }.getSmallestIntegerContainer() + getTextOffset();
 }
 
 Point<int> TextEditor::getTextOffset() const noexcept
@@ -1453,7 +1465,7 @@ Point<int> TextEditor::getTextOffset() const noexcept
              roundToInt ((float) getTopIndent() + (float) borderSize.getTop() + yOffset) - viewport->getViewPositionY() };
 }
 
-RectangleList<int> TextEditor::getTextBounds (Range<int> textRange)
+RectangleList<int> TextEditor::getTextBounds (Range<int> textRange) const
 {
     RectangleList<int> boundingBox;
     Iterator i (*this);
@@ -1543,7 +1555,7 @@ void TextEditor::scrollToMakeSureCursorIsVisible()
     if (keepCaretOnScreen)
     {
         auto viewPos = viewport->getViewPosition();
-        auto caretRect = getCaretRectangle().translated (leftIndent, topIndent);
+        auto caretRect = getCaretRectangle().translated (leftIndent, topIndent) - getTextOffset();
         auto relativeCursor = caretRect.getPosition() - viewPos;
 
         if (relativeCursor.x < jmax (1, proportionOfWidth (0.05f)))
@@ -1626,6 +1638,16 @@ int TextEditor::getTextIndexAt (const int x, const int y) const
                             (float) (y - offset.y));
 }
 
+int TextEditor::getTextIndexAt (const Point<int> pt) const
+{
+    return getTextIndexAt (pt.x, pt.y);
+}
+
+int TextEditor::getCharIndexForPoint (const Point<int> point) const
+{
+    return getTextIndexAt (isMultiLine() ? point : getTextBounds ({ 0, getTotalNumChars() }).getBounds().getConstrainedPoint (point));
+}
+
 void TextEditor::insertTextAtCaret (const String& t)
 {
     String newText (inputFilter != nullptr ? inputFilter->filterNewText (*this, t) : t);
@@ -1649,8 +1671,13 @@ void TextEditor::insertTextAtCaret (const String& t)
 
 void TextEditor::setHighlightedRegion (const Range<int>& newSelection)
 {
-    moveCaretTo (newSelection.getStart(), false);
-    moveCaretTo (newSelection.getEnd(), true);
+    if (newSelection == getHighlightedRegion())
+        return;
+
+    const auto cursorAtStart = newSelection.getEnd() == getHighlightedRegion().getStart()
+                            || newSelection.getEnd() == getHighlightedRegion().getEnd();
+    moveCaretTo (cursorAtStart ? newSelection.getEnd() : newSelection.getStart(), false);
+    moveCaretTo (cursorAtStart ? newSelection.getStart() : newSelection.getEnd(), true);
 }
 
 //==============================================================================
@@ -1827,8 +1854,7 @@ void TextEditor::mouseDown (const MouseEvent& e)
     {
         if (! (popupMenuEnabled && e.mods.isPopupMenu()))
         {
-            moveCaretTo (getTextIndexAt (e.x, e.y),
-                         e.mods.isShiftDown());
+            moveCaretTo (getTextIndexAt (e.getPosition()), e.mods.isShiftDown());
 
             if (auto* peer = getPeer())
                 peer->closeInputMethodContext();
@@ -1860,7 +1886,7 @@ void TextEditor::mouseDrag (const MouseEvent& e)
 {
     if (wasFocused || ! selectAllTextWhenFocused)
         if (! (popupMenuEnabled && e.mods.isPopupMenu()))
-            moveCaretTo (getTextIndexAt (e.x, e.y), true);
+            moveCaretTo (getTextIndexAt (e.getPosition()), true);
 }
 
 void TextEditor::mouseUp (const MouseEvent& e)
@@ -1870,14 +1896,14 @@ void TextEditor::mouseUp (const MouseEvent& e)
 
     if (wasFocused || ! selectAllTextWhenFocused)
         if (e.mouseWasClicked() && ! (popupMenuEnabled && e.mods.isPopupMenu()))
-            moveCaret (getTextIndexAt (e.x, e.y));
+            moveCaret (getTextIndexAt (e.getPosition()));
 
     wasFocused = true;
 }
 
 void TextEditor::mouseDoubleClick (const MouseEvent& e)
 {
-    int tokenEnd = getTextIndexAt (e.x, e.y);
+    int tokenEnd = getTextIndexAt (e.getPosition());
     int tokenStart = 0;
 
     if (e.getNumberOfClicks() > 3)
@@ -1988,8 +2014,14 @@ bool TextEditor::moveCaretUp (bool selecting)
     if (! isMultiLine())
         return moveCaretToStartOfLine (selecting);
 
-    auto caretPos = getCaretRectangleFloat();
-    return moveCaretWithTransaction (indexAtPosition (caretPos.getX(), caretPos.getY() - 1.0f), selecting);
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
+
+    const auto newY = caretPos.getY() - 1.0f;
+
+    if (newY < 0.0f)
+        return moveCaretToStartOfLine (selecting);
+
+    return moveCaretWithTransaction (indexAtPosition (caretPos.getX(), newY), selecting);
 }
 
 bool TextEditor::moveCaretDown (bool selecting)
@@ -1997,7 +2029,7 @@ bool TextEditor::moveCaretDown (bool selecting)
     if (! isMultiLine())
         return moveCaretToEndOfLine (selecting);
 
-    auto caretPos = getCaretRectangleFloat();
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
     return moveCaretWithTransaction (indexAtPosition (caretPos.getX(), caretPos.getBottom() + 1.0f), selecting);
 }
 
@@ -2006,7 +2038,7 @@ bool TextEditor::pageUp (bool selecting)
     if (! isMultiLine())
         return moveCaretToStartOfLine (selecting);
 
-    auto caretPos = getCaretRectangleFloat();
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
     return moveCaretWithTransaction (indexAtPosition (caretPos.getX(), caretPos.getY() - (float) viewport->getViewHeight()), selecting);
 }
 
@@ -2015,7 +2047,7 @@ bool TextEditor::pageDown (bool selecting)
     if (! isMultiLine())
         return moveCaretToEndOfLine (selecting);
 
-    auto caretPos = getCaretRectangleFloat();
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
     return moveCaretWithTransaction (indexAtPosition (caretPos.getX(), caretPos.getBottom() + (float) viewport->getViewHeight()), selecting);
 }
 
@@ -2043,7 +2075,7 @@ bool TextEditor::moveCaretToTop (bool selecting)
 
 bool TextEditor::moveCaretToStartOfLine (bool selecting)
 {
-    auto caretPos = getCaretRectangleFloat();
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
     return moveCaretWithTransaction (indexAtPosition (0.0f, caretPos.getY()), selecting);
 }
 
@@ -2054,7 +2086,7 @@ bool TextEditor::moveCaretToEnd (bool selecting)
 
 bool TextEditor::moveCaretToEndOfLine (bool selecting)
 {
-    auto caretPos = getCaretRectangleFloat();
+    const auto caretPos = (getCaretRectangle() - getTextOffset()).toFloat();
     return moveCaretWithTransaction (indexAtPosition ((float) textHolder->getWidth(), caretPos.getY()), selecting);
 }
 
@@ -2206,9 +2238,6 @@ void TextEditor::focusLost (FocusChangeType)
     textHolder->stopTimer();
 
     underlinedSections.clear();
-
-    if (auto* peer = getPeer())
-        peer->dismissPendingTextInput();
 
     updateCaretPosition();
 
@@ -2570,9 +2599,9 @@ int TextEditor::indexAtPosition (const float x, const float y) const
     {
         for (Iterator i (*this); i.next();)
         {
-            if (y < i.lineY + i.lineHeight)
+            if (y < i.lineY + (i.lineHeight * lineSpacing))
             {
-                if (y < i.lineY)
+                if (jmax (0.0f, y) < i.lineY)
                     return jmax (0, i.indexInText - 1);
 
                 if (x <= i.atomX || i.atom->isNewLine())
@@ -2661,10 +2690,10 @@ void TextEditor::coalesceSimilarSections()
 }
 
 //==============================================================================
-class TextEditorAccessibilityHandler  : public AccessibilityHandler
+class TextEditor::EditorAccessibilityHandler  : public AccessibilityHandler
 {
 public:
-    explicit TextEditorAccessibilityHandler (TextEditor& textEditorToWrap)
+    explicit EditorAccessibilityHandler (TextEditor& textEditorToWrap)
         : AccessibilityHandler (textEditorToWrap,
                                 textEditorToWrap.isReadOnly() ? AccessibilityRole::staticText : AccessibilityRole::editableText,
                                 {},
@@ -2692,10 +2721,7 @@ private:
 
         void setSelection (Range<int> r) override
         {
-            if (r.isEmpty())
-                textEditor.setCaretPosition (r.getStart());
-            else
-                textEditor.setHighlightedRegion (r);
+            textEditor.setHighlightedRegion (r);
         }
 
         String getText (Range<int> r) const override
@@ -2727,8 +2753,7 @@ private:
 
         int getOffsetAtPoint (Point<int> point) const override
         {
-            auto localPoint = textEditor.getLocalPoint (nullptr, point);
-            return textEditor.getTextIndexAt (localPoint.x, localPoint.y);
+            return textEditor.getTextIndexAt (textEditor.getLocalPoint (nullptr, point));
         }
 
     private:
@@ -2741,12 +2766,12 @@ private:
     TextEditor& textEditor;
 
     //==============================================================================
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TextEditorAccessibilityHandler)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EditorAccessibilityHandler)
 };
 
 std::unique_ptr<AccessibilityHandler> TextEditor::createAccessibilityHandler()
 {
-    return std::make_unique<TextEditorAccessibilityHandler> (*this);
+    return std::make_unique<EditorAccessibilityHandler> (*this);
 }
 
 } // namespace juce

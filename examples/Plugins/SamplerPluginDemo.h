@@ -33,7 +33,7 @@
                    juce_audio_plugin_client, juce_audio_processors,
                    juce_audio_utils, juce_core, juce_data_structures,
                    juce_events, juce_graphics, juce_gui_basics, juce_gui_extra
- exporters:        xcode_mac, vs2019
+ exporters:        xcode_mac, vs2022
 
  moduleFlags:      JUCE_STRICT_REFCOUNTEDPOINTER=1
 
@@ -159,7 +159,7 @@ private:
     template <typename Func>
     static std::unique_ptr<Command<Proc>> makeCommand (Func&& func)
     {
-        using Decayed = typename std::decay<Func>::type;
+        using Decayed = std::decay_t<Func>;
         return std::make_unique<TemplateCommand<Proc, Decayed>> (std::forward<Func> (func));
     }
 

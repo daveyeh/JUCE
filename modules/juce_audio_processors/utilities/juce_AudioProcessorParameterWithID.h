@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -64,34 +71,34 @@ public:
     using Category = AudioProcessorParameter::Category;
 
     /** An optional label for the parameter's value */
-    JUCE_NODISCARD auto withLabel (String x)            const { return withMember (*this, &This::label,          std::move (x)); }
+    [[nodiscard]] auto withLabel (String x)            const { return withMember (*this, &This::label,          std::move (x)); }
 
     /** The semantics of this parameter */
-    JUCE_NODISCARD auto withCategory (Category x)       const { return withMember (*this, &This::category,       std::move (x)); }
+    [[nodiscard]] auto withCategory (Category x)       const { return withMember (*this, &This::category,       std::move (x)); }
 
     /** @see AudioProcessorParameter::isMetaParameter() */
-    JUCE_NODISCARD auto withMeta (bool x)               const { return withMember (*this, &This::meta,           std::move (x)); }
+    [[nodiscard]] auto withMeta (bool x)               const { return withMember (*this, &This::meta,           std::move (x)); }
 
     /** @see AudioProcessorParameter::isAutomatable() */
-    JUCE_NODISCARD auto withAutomatable (bool x)        const { return withMember (*this, &This::automatable,    std::move (x)); }
+    [[nodiscard]] auto withAutomatable (bool x)        const { return withMember (*this, &This::automatable,    std::move (x)); }
 
     /** @see AudioProcessorParameter::isOrientationInverted() */
-    JUCE_NODISCARD auto withInverted (bool x)           const { return withMember (*this, &This::inverted,       std::move (x)); }
+    [[nodiscard]] auto withInverted (bool x)           const { return withMember (*this, &This::inverted,       std::move (x)); }
 
     /** An optional label for the parameter's value */
-    JUCE_NODISCARD auto getLabel()                      const { return label; }
+    [[nodiscard]] auto getLabel()                      const { return label; }
 
     /** The semantics of this parameter */
-    JUCE_NODISCARD auto getCategory()                   const { return category; }
+    [[nodiscard]] auto getCategory()                   const { return category; }
 
     /** @see AudioProcessorParameter::isMetaParameter() */
-    JUCE_NODISCARD auto getMeta()                       const { return meta; }
+    [[nodiscard]] auto getMeta()                       const { return meta; }
 
     /** @see AudioProcessorParameter::isAutomatable() */
-    JUCE_NODISCARD auto getAutomatable()                const { return automatable; }
+    [[nodiscard]] auto getAutomatable()                const { return automatable; }
 
     /** @see AudioProcessorParameter::isOrientationInverted() */
-    JUCE_NODISCARD auto getInverted()                   const { return inverted; }
+    [[nodiscard]] auto getInverted()                   const { return inverted; }
 
 private:
     String label;

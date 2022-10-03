@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -821,6 +828,34 @@ static const int defaultVSTSampleRateValue = 44100;
 static const int defaultVSTBlockSizeValue = 512;
 
 JUCE_BEGIN_IGNORE_WARNINGS_MSVC (4996)
+
+class TempChannelPointers
+{
+public:
+    template <typename T>
+    auto getArrayOfModifiableWritePointers (AudioBuffer<T>& buffer)
+    {
+        auto& pointers = getPointers (Tag<T>{});
+
+        jassert ((int) pointers.size() < buffer.getNumChannels());
+        pointers.resize (jmax (pointers.size(), (size_t) buffer.getNumChannels()));
+
+        std::copy (buffer.getArrayOfWritePointers(),
+                   buffer.getArrayOfWritePointers() + buffer.getNumChannels(),
+                   pointers.begin());
+
+        return pointers.data();
+    }
+
+private:
+    template <typename> struct Tag {};
+
+    auto& getPointers (Tag<float>)  { return floatPointers; }
+    auto& getPointers (Tag<double>) { return doublePointers; }
+
+    std::vector<float*>  floatPointers  { 128 };
+    std::vector<double*> doublePointers { 128 };
+};
 
 //==============================================================================
 struct VSTPluginInstance final   : public AudioPluginInstance,
@@ -2019,6 +2054,7 @@ private:
     bool lastProcessBlockCallWasBypass = false, vstSupportsBypass = false;
     mutable StringArray programNames;
     AudioBuffer<float> outOfPlaceBuffer;
+    TempChannelPointers tempChannelPointers[2];
 
     CriticalSection midiInLock;
     MidiBuffer incomingMidi;
@@ -2279,6 +2315,20 @@ private:
         return { nullptr, nullptr };
     }
 
+    template <typename Member, typename Value>
+    void setFromOptional (Member& target, Optional<Value> opt, int32_t flag)
+    {
+        if (opt.hasValue())
+        {
+            target = static_cast<Member> (*opt);
+            vstHostTime.flags |= flag;
+        }
+        else
+        {
+            vstHostTime.flags &= ~flag;
+        }
+    }
+
     //==============================================================================
     template <typename FloatType>
     void processAudio (AudioBuffer<FloatType>& buffer, MidiBuffer& midiMessages,
@@ -2304,34 +2354,32 @@ private:
         {
             if (auto* currentPlayHead = getPlayHead())
             {
-                AudioPlayHead::CurrentPositionInfo position;
-
-                if (currentPlayHead->getCurrentPosition (position))
+                if (const auto position = currentPlayHead->getPosition())
                 {
-                    vstHostTime.samplePos          = (double) position.timeInSamples;
-                    vstHostTime.tempo              = position.bpm;
-                    vstHostTime.timeSigNumerator   = position.timeSigNumerator;
-                    vstHostTime.timeSigDenominator = position.timeSigDenominator;
-                    vstHostTime.ppqPos             = position.ppqPosition;
-                    vstHostTime.barStartPos        = position.ppqPositionOfLastBarStart;
-                    vstHostTime.flags |= Vst2::kVstTempoValid
-                                       | Vst2::kVstTimeSigValid
-                                       | Vst2::kVstPpqPosValid
-                                       | Vst2::kVstBarsValid;
+                    if (const auto samplePos = position->getTimeInSamples())
+                        vstHostTime.samplePos = (double) *samplePos;
+                    else
+                        jassertfalse; // VST hosts *must* call setTimeInSamples on the audio playhead
 
-                    if (const auto* hostTimeNs = getHostTimeNs())
+                    if (auto sig = position->getTimeSignature())
                     {
-                        vstHostTime.nanoSeconds = (double) *hostTimeNs;
-                        vstHostTime.flags |= Vst2::kVstNanosValid;
+                        vstHostTime.flags |= Vst2::kVstTimeSigValid;
+                        vstHostTime.timeSigNumerator   = sig->numerator;
+                        vstHostTime.timeSigDenominator = sig->denominator;
                     }
                     else
                     {
-                        vstHostTime.flags &= ~Vst2::kVstNanosValid;
+                        vstHostTime.flags &= ~Vst2::kVstTimeSigValid;
                     }
 
+                    setFromOptional (vstHostTime.ppqPos,      position->getPpqPosition(),               Vst2::kVstPpqPosValid);
+                    setFromOptional (vstHostTime.barStartPos, position->getPpqPositionOfLastBarStart(), Vst2::kVstBarsValid);
+                    setFromOptional (vstHostTime.nanoSeconds, position->getHostTimeNs(),                Vst2::kVstNanosValid);
+                    setFromOptional (vstHostTime.tempo,       position->getBpm(),                       Vst2::kVstTempoValid);
+
                     int32 newTransportFlags = 0;
-                    if (position.isPlaying)     newTransportFlags |= Vst2::kVstTransportPlaying;
-                    if (position.isRecording)   newTransportFlags |= Vst2::kVstTransportRecording;
+                    if (position->getIsPlaying())     newTransportFlags |= Vst2::kVstTransportPlaying;
+                    if (position->getIsRecording())   newTransportFlags |= Vst2::kVstTransportRecording;
 
                     if (newTransportFlags != (vstHostTime.flags & (Vst2::kVstTransportPlaying
                                                                    | Vst2::kVstTransportRecording)))
@@ -2339,15 +2387,18 @@ private:
                     else
                         vstHostTime.flags &= ~Vst2::kVstTransportChanged;
 
-                    const auto optionalFrameRate = [&fr = position.frameRate]() -> Optional<Vst2::VstInt32>
+                    const auto optionalFrameRate = [fr = position->getFrameRate()]() -> Optional<Vst2::VstInt32>
                     {
-                        switch (fr.getBaseRate())
+                        if (! fr.hasValue())
+                            return {};
+
+                        switch (fr->getBaseRate())
                         {
-                            case 24:        return fr.isPullDown() ? Vst2::kVstSmpte239fps : Vst2::kVstSmpte24fps;
-                            case 25:        return fr.isPullDown() ? Vst2::kVstSmpte249fps : Vst2::kVstSmpte25fps;
-                            case 30:        return fr.isPullDown() ? (fr.isDrop() ? Vst2::kVstSmpte2997dfps : Vst2::kVstSmpte2997fps)
-                                                                   : (fr.isDrop() ? Vst2::kVstSmpte30dfps   : Vst2::kVstSmpte30fps);
-                            case 60:        return fr.isPullDown() ? Vst2::kVstSmpte599fps : Vst2::kVstSmpte60fps;
+                            case 24:        return fr->isPullDown() ? Vst2::kVstSmpte239fps : Vst2::kVstSmpte24fps;
+                            case 25:        return fr->isPullDown() ? Vst2::kVstSmpte249fps : Vst2::kVstSmpte25fps;
+                            case 30:        return fr->isPullDown() ? (fr->isDrop() ? Vst2::kVstSmpte2997dfps : Vst2::kVstSmpte2997fps)
+                                                                    : (fr->isDrop() ? Vst2::kVstSmpte30dfps   : Vst2::kVstSmpte30fps);
+                            case 60:        return fr->isPullDown() ? Vst2::kVstSmpte599fps : Vst2::kVstSmpte60fps;
                         }
 
                         return {};
@@ -2355,18 +2406,24 @@ private:
 
                     vstHostTime.flags |= optionalFrameRate ? Vst2::kVstSmpteValid : 0;
                     vstHostTime.smpteFrameRate = optionalFrameRate.orFallback (Vst2::VstSmpteFrameRate{});
-                    vstHostTime.smpteOffset = (int32) (position.timeInSeconds * 80.0 * position.frameRate.getEffectiveRate() + 0.5);
+                    const auto effectiveRate = position->getFrameRate().hasValue() ? position->getFrameRate()->getEffectiveRate() : 0.0;
+                    vstHostTime.smpteOffset = (int32) (position->getTimeInSeconds().orFallback (0.0) * 80.0 * effectiveRate + 0.5);
 
-                    if (position.isLooping)
+                    if (const auto loop = position->getLoopPoints())
                     {
-                        vstHostTime.cycleStartPos = position.ppqLoopStart;
-                        vstHostTime.cycleEndPos   = position.ppqLoopEnd;
-                        vstHostTime.flags |= (Vst2::kVstCyclePosValid | Vst2::kVstTransportCycleActive);
+                        vstHostTime.flags |= Vst2::kVstCyclePosValid;
+                        vstHostTime.cycleStartPos = loop->ppqStart;
+                        vstHostTime.cycleEndPos   = loop->ppqEnd;
                     }
                     else
                     {
-                        vstHostTime.flags &= ~(Vst2::kVstCyclePosValid | Vst2::kVstTransportCycleActive);
+                        vstHostTime.flags &= ~Vst2::kVstCyclePosValid;
                     }
+
+                    if (position->getIsLooping())
+                        vstHostTime.flags |= Vst2::kVstTransportCycleActive;
+                    else
+                        vstHostTime.flags &= ~Vst2::kVstTransportCycleActive;
                 }
             }
 
@@ -2428,16 +2485,16 @@ private:
     {
         if ((vstEffect->flags & Vst2::effFlagsCanReplacing) != 0)
         {
-            vstEffect->processReplacing (vstEffect, buffer.getArrayOfWritePointers(),
-                                                    buffer.getArrayOfWritePointers(), sampleFrames);
+            vstEffect->processReplacing (vstEffect, tempChannelPointers[0].getArrayOfModifiableWritePointers (buffer),
+                                                    tempChannelPointers[1].getArrayOfModifiableWritePointers (buffer), sampleFrames);
         }
         else
         {
             outOfPlaceBuffer.setSize (vstEffect->numOutputs, sampleFrames);
             outOfPlaceBuffer.clear();
 
-            vstEffect->process (vstEffect, buffer.getArrayOfWritePointers(),
-                                           outOfPlaceBuffer.getArrayOfWritePointers(), sampleFrames);
+            vstEffect->process (vstEffect, tempChannelPointers[0].getArrayOfModifiableWritePointers (buffer),
+                                           tempChannelPointers[1].getArrayOfModifiableWritePointers (outOfPlaceBuffer), sampleFrames);
 
             for (int i = vstEffect->numOutputs; --i >= 0;)
                 buffer.copyFrom (i, 0, outOfPlaceBuffer.getReadPointer (i), sampleFrames);
@@ -2446,8 +2503,8 @@ private:
 
     inline void invokeProcessFunction (AudioBuffer<double>& buffer, int32 sampleFrames)
     {
-        vstEffect->processDoubleReplacing (vstEffect, buffer.getArrayOfWritePointers(),
-                                                      buffer.getArrayOfWritePointers(), sampleFrames);
+        vstEffect->processDoubleReplacing (vstEffect, tempChannelPointers[0].getArrayOfModifiableWritePointers (buffer),
+                                                      tempChannelPointers[1].getArrayOfModifiableWritePointers (buffer), sampleFrames);
     }
 
     //==============================================================================
@@ -3234,10 +3291,9 @@ private:
         if (! isWindowSizeCorrectForPlugin (w, h))
         {
             updateSizeFromEditor (w, h);
+            embeddedComponent.updateHWNDBounds();
             sizeCheckCount = 0;
         }
-
-        embeddedComponent.updateHWNDBounds();
     }
 
     void checkPluginWindowSize()
@@ -3321,6 +3377,7 @@ private:
 
                    #if JUCE_WINDOWS
                     r->resizeToFit();
+                    r->embeddedComponent.updateHWNDBounds();
                    #endif
                     r->componentMovedOrResized (true, true);
                 }
@@ -3390,8 +3447,10 @@ AudioProcessorEditor* VSTPluginInstance::createEditor()
 
 bool VSTPluginInstance::updateSizeFromEditor (int w, int h)
 {
+   #if ! JUCE_IOS && ! JUCE_ANDROID
     if (auto* editor = dynamic_cast<VSTPluginWindow*> (getActiveEditor()))
         return editor->updateSizeFromEditor (w, h);
+   #endif
 
     return false;
 }

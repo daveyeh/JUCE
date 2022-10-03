@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -75,8 +82,17 @@ public:
         int numAttribs = 0;
 
         attribs[numAttribs++] = NSOpenGLPFAOpenGLProfile;
-        attribs[numAttribs++] = version >= openGL3_2 ? NSOpenGLProfileVersion3_2Core
-                                                     : NSOpenGLProfileVersionLegacy;
+        attribs[numAttribs++] = [version]
+        {
+            if (version == openGL3_2)
+                return NSOpenGLProfileVersion3_2Core;
+
+            if (version != defaultGLVersion)
+                if (@available (macOS 10.10, *))
+                    return NSOpenGLProfileVersion4_1Core;
+
+            return NSOpenGLProfileVersionLegacy;
+        }();
 
         attribs[numAttribs++] = NSOpenGLPFADoubleBuffer;
         attribs[numAttribs++] = NSOpenGLPFAClosestPolicy;
@@ -103,11 +119,12 @@ public:
         }
     }
 
-    bool initialiseOnRenderThread (OpenGLContext&)    { return true; }
-    void shutdownOnRenderThread()                     { deactivateCurrentContext(); }
+    InitResult initialiseOnRenderThread (OpenGLContext&)  { return InitResult::success; }
+    void shutdownOnRenderThread()                         { deactivateCurrentContext(); }
 
     bool createdOk() const noexcept                   { return getRawContext() != nullptr; }
-    void* getRawContext() const noexcept              { return static_cast<void*> (renderContext); }
+    NSOpenGLView* getNSView() const noexcept          { return view; }
+    NSOpenGLContext* getRawContext() const noexcept   { return renderContext; }
     GLuint getFrameBufferID() const noexcept          { return 0; }
 
     bool makeActive() const noexcept
@@ -239,10 +256,8 @@ public:
 
     static NSOpenGLContextParameter getSwapIntervalParameter()
     {
-        #if defined (MAC_OS_X_VERSION_10_12) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_12
-         if (@available (macOS 10.12, *))
-             return NSOpenGLContextParameterSwapInterval;
-        #endif
+        if (@available (macOS 10.12, *))
+            return NSOpenGLContextParameterSwapInterval;
 
         return NSOpenGLCPSwapInterval;
     }

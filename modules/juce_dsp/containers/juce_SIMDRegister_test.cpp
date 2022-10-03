@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -23,31 +30,30 @@ namespace dsp
 
 namespace SIMDRegister_test_internal
 {
-    template <typename type, typename = void> struct RandomPrimitive {};
-
     template <typename type>
-    struct RandomPrimitive<type, typename std::enable_if<std::is_floating_point<type>::value>::type>
+    struct RandomPrimitive
     {
         static type next (Random& random)
         {
-            return static_cast<type> (std::is_signed<type>::value ? (random.nextFloat() * 16.0) - 8.0
-                                                                  : (random.nextFloat() * 8.0));
-        }
-    };
-
-    template <typename type>
-    struct RandomPrimitive<type, typename std::enable_if<std::is_integral<type>::value>::type>
-    {
-        static type next (Random& random)
-        {
-            return static_cast<type> (random.nextInt64());
+            if constexpr (std::is_floating_point_v<type>)
+            {
+                return static_cast<type> (std::is_signed_v<type> ? (random.nextFloat() * 16.0) - 8.0
+                                                                 : (random.nextFloat() * 8.0));
+            }
+            else if constexpr (std::is_integral_v<type>)
+            {
+                return static_cast<type> (random.nextInt64());
+            }
         }
     };
 
     template <typename type>
     struct RandomValue
     {
-        static type next (Random& random) { return RandomPrimitive<type>::next (random); }
+        static type next (Random& random)
+        {
+            return RandomPrimitive<type>::next (random);
+        }
     };
 
     template <typename type>
@@ -749,11 +755,10 @@ public:
         template <typename type>
         static void run (UnitTest& u, Random& random, Tag<type>)
         {
-            bool is_signed = std::is_signed<type>::value;
             type array [SIMDRegister<type>::SIMDNumElements];
 
-            auto value = is_signed ? static_cast<type> ((random.nextFloat() * 16.0) - 8.0)
-                                   : static_cast<type> (random.nextFloat() * 8.0);
+            auto value = std::is_signed_v<type> ? static_cast<type> ((random.nextFloat() * 16.0) - 8.0)
+                                                : static_cast<type> (random.nextFloat() * 8.0);
 
             std::fill (array, array + SIMDRegister<type>::SIMDNumElements, value);
             SIMDRegister<type> a, b;

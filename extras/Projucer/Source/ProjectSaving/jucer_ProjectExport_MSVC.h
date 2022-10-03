@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -66,11 +73,21 @@ public:
     String getWindowsTargetPlatformVersion() const    { return targetPlatformVersion.get(); }
 
     //==============================================================================
-    void addToolsetProperty (PropertyListBuilder& props, const char** names, const var* values, int num)
+    void addToolsetProperty (PropertyListBuilder& props, std::initializer_list<const char*> valueStrings)
     {
-        props.add (new ChoicePropertyComponent (platformToolsetValue, "Platform Toolset",
-                                                StringArray (names, num), { values, num }),
-                   "Specifies the version of the platform toolset that will be used when building this project.");
+        StringArray names;
+        Array<var> values;
+
+        for (const auto& valueString : valueStrings)
+        {
+            names.add (valueString);
+            values.add (valueString);
+        }
+
+        props.add (new ChoicePropertyComponent (platformToolsetValue, "Platform Toolset", names, values),
+                   "Specifies the version of the platform toolset that will be used when building this project.\n"
+                   "In order to use the ClangCL toolset, you must first install the \"C++ Clang Tools for Windows\" "
+                   "package using the Visual Studio Installer.");
     }
 
     void create (const OwnedArray<LibraryModule>&) const override
@@ -131,6 +148,9 @@ public:
 
         aaxPathValueWrapper.init ({ settings, Ids::aaxFolder, nullptr },
                                   getAppSettings().getStoredPath (Ids::aaxPath,  TargetOS::windows), TargetOS::windows);
+
+        araPathValueWrapper.init ({ settings, Ids::araFolder, nullptr },
+                                  getAppSettings().getStoredPath (Ids::araPath, TargetOS::windows), TargetOS::windows);
     }
 
     //==============================================================================
@@ -158,7 +178,7 @@ public:
               vstBinaryLocation              (config, Ids::vstBinaryLocation,          getUndoManager()),
               vst3BinaryLocation             (config, Ids::vst3BinaryLocation,         getUndoManager()),
               aaxBinaryLocation              (config, Ids::aaxBinaryLocation,          getUndoManager()),
-              lv2BinaryLocation              (config, Ids::aaxBinaryLocation,          getUndoManager()),
+              lv2BinaryLocation              (config, Ids::lv2BinaryLocation,          getUndoManager()),
               unityPluginBinaryLocation      (config, Ids::unityPluginBinaryLocation,  getUndoManager(), {})
         {
             setPluginBinaryCopyLocationDefaults();
@@ -605,7 +625,8 @@ public:
                     if (config.isFastMathEnabled())
                         cl->createNewChildElement ("FloatingPointModel")->addTextElement ("Fast");
 
-                    auto extraFlags = getOwner().replacePreprocessorTokens (config, getOwner().getExtraCompilerFlagsString()).trim();
+                    auto extraFlags = getOwner().replacePreprocessorTokens (config, config.getAllCompilerFlagsString()).trim();
+
                     if (extraFlags.isNotEmpty())
                         cl->createNewChildElement ("AdditionalOptions")->addTextElement (extraFlags + " %(AdditionalOptions)");
 
@@ -664,7 +685,7 @@ public:
                     if (additionalDependencies.isNotEmpty())
                         link->createNewChildElement ("AdditionalDependencies")->addTextElement (additionalDependencies);
 
-                    auto extraLinkerOptions = getOwner().getExtraLinkerFlagsString();
+                    auto extraLinkerOptions = config.getAllLinkerFlagsString();
                     if (extraLinkerOptions.isNotEmpty())
                         link->createNewChildElement ("AdditionalOptions")->addTextElement (getOwner().replacePreprocessorTokens (config, extraLinkerOptions).trim()
                                                                                            + " %(AdditionalOptions)");
@@ -743,8 +764,9 @@ public:
 
                 if (type == LV2TurtleProgram)
                 {
-                    cppFiles->createNewChildElement ("ClCompile")
-                            ->setAttribute ("Include", owner.getLV2TurtleDumpProgramSource().toWindowsStyle());
+                    const auto location = owner.rebaseFromProjectFolderToBuildTarget (owner.getLV2TurtleDumpProgramSource())
+                                               .toWindowsStyle();
+                    cppFiles->createNewChildElement ("ClCompile")->setAttribute ("Include", location);
                 }
             }
 
@@ -1390,7 +1412,6 @@ public:
     bool isCodeBlocks() const override                       { return false; }
     bool isMakefile() const override                         { return false; }
     bool isAndroidStudio() const override                    { return false; }
-    bool isCLion() const override                            { return false; }
 
     bool isAndroid() const override                          { return false; }
     bool isWindows() const override                          { return true; }
@@ -1776,51 +1797,6 @@ protected:
 };
 
 //==============================================================================
-class MSVCProjectExporterVC2015  : public MSVCProjectExporterBase
-{
-public:
-    MSVCProjectExporterVC2015 (Project& p, const ValueTree& t)
-        : MSVCProjectExporterBase (p, t, getTargetFolderName())
-    {
-        name = getDisplayName();
-
-        targetPlatformVersion.setDefault (getDefaultWindowsTargetPlatformVersion());
-        platformToolsetValue.setDefault (getDefaultToolset());
-    }
-
-    static String getDisplayName()        { return "Visual Studio 2015"; }
-    static String getValueTreeTypeName()  { return "VS2015"; }
-    static String getTargetFolderName()   { return "VisualStudio2015"; }
-
-    Identifier getExporterIdentifier() const override { return getValueTreeTypeName(); }
-
-    int getVisualStudioVersion() const override                      { return 14; }
-    String getSolutionComment() const override                       { return "# Visual Studio 14"; }
-    String getToolsVersion() const override                          { return "14.0"; }
-    String getDefaultToolset() const override                        { return "v140"; }
-    String getDefaultWindowsTargetPlatformVersion() const override   { return "8.1"; }
-
-    static MSVCProjectExporterVC2015* createForSettings (Project& projectToUse, const ValueTree& settingsToUse)
-    {
-        if (settingsToUse.hasType (getValueTreeTypeName()))
-            return new MSVCProjectExporterVC2015 (projectToUse, settingsToUse);
-
-        return nullptr;
-    }
-
-    void createExporterProperties (PropertyListBuilder& props) override
-    {
-        static const char* toolsetNames[] = { "v140", "v140_xp", "CTP_Nov2013" };
-        const var toolsets[]              = { "v140", "v140_xp", "CTP_Nov2013" };
-        addToolsetProperty (props, toolsetNames, toolsets, numElementsInArray (toolsets));
-
-        MSVCProjectExporterBase::createExporterProperties (props);
-    }
-
-    JUCE_DECLARE_NON_COPYABLE (MSVCProjectExporterVC2015)
-};
-
-//==============================================================================
 class MSVCProjectExporterVC2017  : public MSVCProjectExporterBase
 {
 public:
@@ -1855,10 +1831,7 @@ public:
 
     void createExporterProperties (PropertyListBuilder& props) override
     {
-        static const char* toolsetNames[] = { "v140", "v140_xp", "v141", "v141_xp" };
-        const var toolsets[]              = { "v140", "v140_xp", "v141", "v141_xp" };
-        addToolsetProperty (props, toolsetNames, toolsets, numElementsInArray (toolsets));
-
+        addToolsetProperty (props, { "v140", "v140_xp", "v141", "v141_xp" });
         MSVCProjectExporterBase::createExporterProperties (props);
     }
 
@@ -1900,10 +1873,7 @@ public:
 
     void createExporterProperties (PropertyListBuilder& props) override
     {
-        static const char* toolsetNames[] = { "v140", "v140_xp", "v141", "v141_xp", "v142" };
-        const var toolsets[]              = { "v140", "v140_xp", "v141", "v141_xp", "v142" };
-        addToolsetProperty (props, toolsetNames, toolsets, numElementsInArray (toolsets));
-
+        addToolsetProperty (props, { "v140", "v140_xp", "v141", "v141_xp", "v142", "ClangCL" });
         MSVCProjectExporterBase::createExporterProperties (props);
     }
 
@@ -1945,10 +1915,7 @@ public:
 
     void createExporterProperties (PropertyListBuilder& props) override
     {
-        static const char* toolsetNames[] = { "v140", "v140_xp", "v141", "v141_xp", "v142", "v143" };
-        const var toolsets[]              = { "v140", "v140_xp", "v141", "v141_xp", "v142", "v143" };
-        addToolsetProperty (props, toolsetNames, toolsets, numElementsInArray (toolsets));
-
+        addToolsetProperty (props, { "v140", "v140_xp", "v141", "v141_xp", "v142", "v143", "ClangCL" });
         MSVCProjectExporterBase::createExporterProperties (props);
     }
 

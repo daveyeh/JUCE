@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -50,6 +57,7 @@ namespace build_tools
         virtual bool isGUIApplication() const       { return false; }
         virtual bool isCommandLineApp() const       { return false; }
         virtual bool isAudioPlugin() const          { return false; }
+        virtual bool isARAAudioPlugin() const       { return false; }
 
         //==============================================================================
         struct Target
@@ -111,8 +119,7 @@ namespace build_tools
                     case SharedCodeTarget:  return "Shared Code";
                     case AggregateTarget:   return "All";
                     case LV2TurtleProgram:  return "LV2 Manifest Helper";
-                    case unspecified:
-                    default:                break;
+                    case unspecified:       break;
                 }
 
                 return "undefined";
@@ -160,7 +167,7 @@ namespace build_tools
                     case LV2TurtleProgram:  return executable;
                     case AggregateTarget:
                     case unspecified:
-                    default:                break;
+                        break;
                 }
 
                 return unknown;
@@ -252,7 +259,43 @@ namespace build_tools
                 case Target::StaticLibrary:
                 case Target::DynamicLibrary:
                 case Target::unspecified:
-                default:
+                    break;
+            }
+
+            return false;
+        }
+    };
+
+    struct ProjectType_ARAAudioPlugin : public ProjectType
+    {
+        ProjectType_ARAAudioPlugin() : ProjectType (getTypeName(), "ARA Audio Plug-in") {}
+
+        static const char* getTypeName() noexcept { return "araaudioplug"; }
+        bool isAudioPlugin() const override { return true; }
+        bool isARAAudioPlugin() const override { return true; }
+
+        bool supportsTargetType (Target::Type targetType) const override
+        {
+            switch (targetType)
+            {
+                case Target::VSTPlugIn:
+                case Target::VST3PlugIn:
+                case Target::AAXPlugIn:
+                case Target::AudioUnitPlugIn:
+                case Target::AudioUnitv3PlugIn:
+                case Target::StandalonePlugIn:
+                case Target::UnityPlugIn:
+                case Target::SharedCodeTarget:
+                case Target::AggregateTarget:
+                    return true;
+
+                case Target::GUIApp:
+                case Target::ConsoleApp:
+                case Target::StaticLibrary:
+                case Target::DynamicLibrary:
+                case Target::unspecified:
+                case Target::LV2PlugIn:
+                case Target::LV2TurtleProgram:
                     break;
             }
 
@@ -268,8 +311,9 @@ namespace build_tools
         static ProjectType_StaticLibrary staticLib;
         static ProjectType_DLL dll;
         static ProjectType_AudioPlugin plugin;
+        static ProjectType_ARAAudioPlugin araplugin;
 
-        return Array<ProjectType*>(&guiApp, &consoleApp, &staticLib, &dll, &plugin);
+        return Array<ProjectType*>(&guiApp, &consoleApp, &staticLib, &dll, &plugin, &araplugin);
     }
 }
 }

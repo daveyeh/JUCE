@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -34,12 +41,10 @@ public:
 
         auto numComponents = (size_t) lineStride * (size_t) jmax (1, height);
 
-       # if JUCE_MAC && defined (MAC_OS_X_VERSION_10_14) && MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_14
-        // This version of the SDK intermittently requires a bit of extra space
+        // SDK version 10.14+ intermittently requires a bit of extra space
         // at the end of the image data. This feels like something has gone
         // wrong in Apple's code.
         numComponents += (size_t) lineStride;
-       #endif
 
         imageData->data.allocate (numComponents, clearImage);
 
@@ -399,8 +404,13 @@ void CoreGraphicsContext::setFill (const FillType& fillType)
 
     if (fillType.isColour())
     {
-        CGContextSetRGBFillColor (context.get(), fillType.colour.getFloatRed(), fillType.colour.getFloatGreen(),
-                                  fillType.colour.getFloatBlue(), fillType.colour.getFloatAlpha());
+        const CGFloat components[] { fillType.colour.getFloatRed(),
+                                     fillType.colour.getFloatGreen(),
+                                     fillType.colour.getFloatBlue(),
+                                     fillType.colour.getFloatAlpha() };
+
+        const detail::ColorPtr color { CGColorCreate (rgbColourSpace.get(), components) };
+        CGContextSetFillColorWithColor (context.get(), color.get());
         CGContextSetAlpha (context.get(), 1.0f);
     }
 }
@@ -423,6 +433,26 @@ void CoreGraphicsContext::setInterpolationQuality (Graphics::ResamplingQuality q
 }
 
 //==============================================================================
+void CoreGraphicsContext::fillAll()
+{
+    // The clip rectangle is expanded in order to avoid having alpha blended pixels at the edges.
+    // The clipping mechanism will take care of cutting off pixels beyond the clip bounds. This is
+    // a hard cutoff and will ensure that no semi-transparent pixels will remain inside the filled
+    // area.
+    const auto clipBounds = getClipBounds();
+
+    const auto clipBoundsOnDevice = CGContextConvertSizeToDeviceSpace (context.get(),
+                                                                       CGSize { (CGFloat) clipBounds.getWidth(),
+                                                                                (CGFloat) clipBounds.getHeight() });
+
+    const auto inverseScale = clipBoundsOnDevice.width > (CGFloat) 0.0
+                            ? (int) (clipBounds.getWidth() / clipBoundsOnDevice.width)
+                            : 0;
+    const auto expansion = jmax (1, inverseScale);
+
+    fillRect (clipBounds.expanded (expansion), false);
+}
+
 void CoreGraphicsContext::fillRect (const Rectangle<int>& r, bool replaceExistingContents)
 {
     fillCGRect (CGRectMake (r.getX(), flipHeight - r.getBottom(), r.getWidth(), r.getHeight()), replaceExistingContents);

@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -147,7 +154,7 @@ public:
     /** Returns a copy of this font with a new typeface style.
         @see getAvailableStyles()
     */
-    JUCE_NODISCARD Font withTypefaceStyle (const String& newStyle) const;
+    [[nodiscard]] Font withTypefaceStyle (const String& newStyle) const;
 
     /** Returns a list of the styles that this font can use. */
     StringArray getAvailableStyles() const;
@@ -197,10 +204,10 @@ public:
 
     //==============================================================================
     /** Returns a copy of this font with a new height. */
-    JUCE_NODISCARD Font withHeight (float height) const;
+    [[nodiscard]] Font withHeight (float height) const;
 
     /** Returns a copy of this font with a new height, specified in points. */
-    JUCE_NODISCARD Font withPointHeight (float heightInPoints) const;
+    [[nodiscard]] Font withPointHeight (float heightInPoints) const;
 
     /** Changes the font's height.
         @see getHeight, withHeight, setHeightWithoutChangingWidth
@@ -264,7 +271,7 @@ public:
         @param styleFlags     a bitwise-or'ed combination of values from the FontStyleFlags enum.
         @see FontStyleFlags, getStyleFlags
     */
-    JUCE_NODISCARD Font withStyle (int styleFlags) const;
+    [[nodiscard]] Font withStyle (int styleFlags) const;
 
     /** Changes the font's style.
         @param newFlags     a bitwise-or'ed combination of values from the FontStyleFlags enum.
@@ -279,7 +286,7 @@ public:
     /** Returns a copy of this font with the bold attribute set.
         If the font does not have a bold version, this will return the default font.
      */
-    JUCE_NODISCARD Font boldened() const;
+    [[nodiscard]] Font boldened() const;
 
     /** Returns true if the font is bold. */
     bool isBold() const noexcept;
@@ -287,7 +294,7 @@ public:
     /** Makes the font italic or non-italic. */
     void setItalic (bool shouldBeItalic);
     /** Returns a copy of this font with the italic attribute set. */
-    JUCE_NODISCARD Font italicised() const;
+    [[nodiscard]] Font italicised() const;
     /** Returns true if the font is italic. */
     bool isItalic() const noexcept;
 
@@ -310,7 +317,7 @@ public:
                             narrower, greater than 1.0 will be stretched out.
         @see getHorizontalScale
     */
-    JUCE_NODISCARD Font withHorizontalScale (float scaleFactor) const;
+    [[nodiscard]] Font withHorizontalScale (float scaleFactor) const;
 
     /** Changes the font's horizontal scale factor.
         @param scaleFactor  a value of 1.0 is the normal scale, less than this will be
@@ -346,7 +353,7 @@ public:
                                 normal spacing, positive values spread the letters out,
                                 negative values make them closer together.
     */
-    JUCE_NODISCARD Font withExtraKerningFactor (float extraKerning) const;
+    [[nodiscard]] Font withExtraKerningFactor (float extraKerning) const;
 
     /** Changes the font's kerning.
         @param extraKerning     a multiple of the font's height that will be added

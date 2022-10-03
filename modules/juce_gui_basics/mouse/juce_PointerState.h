@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -34,13 +41,13 @@ public:
     bool operator== (const PointerState& other) const noexcept   { return tie() == other.tie(); }
     bool operator!= (const PointerState& other) const noexcept   { return tie() != other.tie(); }
 
-    JUCE_NODISCARD PointerState withPositionOffset (Point<float> x)        const noexcept { return with (&PointerState::position, position + x); }
-    JUCE_NODISCARD PointerState withPosition (Point<float> x)              const noexcept { return with (&PointerState::position, x); }
-    JUCE_NODISCARD PointerState withPressure (float x)                     const noexcept { return with (&PointerState::pressure, x); }
-    JUCE_NODISCARD PointerState withOrientation (float x)                  const noexcept { return with (&PointerState::orientation, x); }
-    JUCE_NODISCARD PointerState withRotation (float x)                     const noexcept { return with (&PointerState::rotation, x); }
-    JUCE_NODISCARD PointerState withTiltX (float x)                        const noexcept { return with (&PointerState::tiltX, x); }
-    JUCE_NODISCARD PointerState withTiltY (float x)                        const noexcept { return with (&PointerState::tiltY, x); }
+    [[nodiscard]] PointerState withPositionOffset (Point<float> x)        const noexcept { return with (&PointerState::position, position + x); }
+    [[nodiscard]] PointerState withPosition (Point<float> x)              const noexcept { return with (&PointerState::position, x); }
+    [[nodiscard]] PointerState withPressure (float x)                     const noexcept { return with (&PointerState::pressure, x); }
+    [[nodiscard]] PointerState withOrientation (float x)                  const noexcept { return with (&PointerState::orientation, x); }
+    [[nodiscard]] PointerState withRotation (float x)                     const noexcept { return with (&PointerState::rotation, x); }
+    [[nodiscard]] PointerState withTiltX (float x)                        const noexcept { return with (&PointerState::tiltX, x); }
+    [[nodiscard]] PointerState withTiltY (float x)                        const noexcept { return with (&PointerState::tiltY, x); }
 
     Point<float> position;
     float pressure    = MouseInputSource::defaultPressure;

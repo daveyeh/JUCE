@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -61,13 +68,13 @@ public:
 
     //==============================================================================
     /** Sets the type of icon that should be used for the dialog box. */
-    JUCE_NODISCARD MessageBoxOptions withIconType (MessageBoxIconType type) const          { return with (*this, &MessageBoxOptions::iconType, type); }
+    [[nodiscard]] MessageBoxOptions withIconType (MessageBoxIconType type) const          { return with (*this, &MessageBoxOptions::iconType, type); }
 
     /** Sets the title of the dialog box. */
-    JUCE_NODISCARD MessageBoxOptions withTitle (const String& boxTitle) const              { return with (*this, &MessageBoxOptions::title, boxTitle); }
+    [[nodiscard]] MessageBoxOptions withTitle (const String& boxTitle) const              { return with (*this, &MessageBoxOptions::title, boxTitle); }
 
     /** Sets the message that should be displayed in the dialog box. */
-    JUCE_NODISCARD MessageBoxOptions withMessage (const String& boxMessage) const          { return with (*this, &MessageBoxOptions::message, boxMessage); }
+    [[nodiscard]] MessageBoxOptions withMessage (const String& boxMessage) const          { return with (*this, &MessageBoxOptions::message, boxMessage); }
 
     /** If the string passed in is not empty, this will add a button to the
         dialog box with the specified text.
@@ -75,10 +82,10 @@ public:
         Generally up to 3 buttons are supported for dialog boxes, so adding any more
         than this may have no effect.
     */
-    JUCE_NODISCARD MessageBoxOptions withButton (const String& text) const                 { auto copy = *this; copy.buttons.add (text); return copy; }
+    [[nodiscard]] MessageBoxOptions withButton (const String& text) const                 { auto copy = *this; copy.buttons.add (text); return copy; }
 
     /** The component that the dialog box should be associated with. */
-    JUCE_NODISCARD MessageBoxOptions withAssociatedComponent (Component* component) const  { return with (*this, &MessageBoxOptions::associatedComponent, component); }
+    [[nodiscard]] MessageBoxOptions withAssociatedComponent (Component* component) const  { return with (*this, &MessageBoxOptions::associatedComponent, component); }
 
     //==============================================================================
     /** Returns the icon type of the dialog box.

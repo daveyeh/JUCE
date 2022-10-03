@@ -1,13 +1,20 @@
 /*
   ==============================================================================
 
-   This file is part of the JUCE 7 technical preview.
+   This file is part of the JUCE library.
    Copyright (c) 2022 - Raw Material Software Limited
 
-   You may use this code under the terms of the GPL v3
-   (see www.gnu.org/licenses).
+   JUCE is an open source library subject to commercial or open-source
+   licensing.
 
-   For the technical preview this file cannot be licensed commercially.
+   By using JUCE, you agree to the terms of both the JUCE 7 End-User License
+   Agreement and JUCE Privacy Policy.
+
+   End User License Agreement: www.juce.com/juce-7-licence
+   Privacy Policy: www.juce.com/juce-privacy-policy
+
+   Or: You may also use this code under the terms of the GPL v3 (see
+   www.gnu.org/licenses).
 
    JUCE IS PROVIDED "AS IS" WITHOUT ANY WARRANTY, AND ALL WARRANTIES, WHETHER
    EXPRESSED OR IMPLIED, INCLUDING MERCHANTABILITY AND FITNESS FOR PURPOSE, ARE
@@ -68,6 +75,7 @@ namespace Ids
     DECLARE_ID (auFolder);
     DECLARE_ID (vstLegacyPath);
     DECLARE_ID (aaxPath);
+    DECLARE_ID (araPath);
     DECLARE_ID (flags);
     DECLARE_ID (line);
     DECLARE_ID (index);
@@ -154,7 +162,11 @@ namespace Ids
     DECLARE_ID (enableIncrementalLinking);
     DECLARE_ID (bundleIdentifier);
     DECLARE_ID (aaxIdentifier);
+    DECLARE_ID (araFactoryID);
+    DECLARE_ID (araDocumentArchiveID);
+    DECLARE_ID (araCompatibleArchiveIDs);
     DECLARE_ID (aaxFolder);
+    DECLARE_ID (araFolder);
     DECLARE_ID (compile);
     DECLARE_ID (noWarnings);
     DECLARE_ID (skipPCH);
@@ -266,10 +278,6 @@ namespace Ids
     DECLARE_ID (gradleToolchain);
     DECLARE_ID (gradleToolchainVersion);
     DECLARE_ID (linuxExtraPkgConfig);
-    DECLARE_ID (clionMakefileEnabled);
-    DECLARE_ID (clionXcodeEnabled);
-    DECLARE_ID (clionCodeBlocksEnabled);
-    DECLARE_ID (clionExePath);
     DECLARE_ID (font);
     DECLARE_ID (colour);
     DECLARE_ID (userNotes);
@@ -330,6 +338,7 @@ namespace Ids
     DECLARE_ID (buildUnity);
     DECLARE_ID (buildLV2);
     DECLARE_ID (enableIAA);
+    DECLARE_ID (enableARA);
     DECLARE_ID (pluginName);
     DECLARE_ID (pluginDesc);
     DECLARE_ID (pluginManufacturer);
@@ -352,6 +361,8 @@ namespace Ids
     DECLARE_ID (pluginAAXCategory);
     DECLARE_ID (pluginAAXDisableBypass);
     DECLARE_ID (pluginAAXDisableMultiMono);
+    DECLARE_ID (pluginARAAnalyzableContent);
+    DECLARE_ID (pluginARATransformFlags);
     DECLARE_ID (pluginVSTNumMidiInputs);
     DECLARE_ID (pluginVSTNumMidiOutputs);
     DECLARE_ID (suppressPlistResourceUsage);
@@ -359,6 +370,7 @@ namespace Ids
     DECLARE_ID (exporters);
     DECLARE_ID (website);
     DECLARE_ID (mainClass);
+    DECLARE_ID (documentControllerClass);
     DECLARE_ID (moduleFlags);
     DECLARE_ID (projectLineFeed);
     DECLARE_ID (compilerFlagSchemes);
