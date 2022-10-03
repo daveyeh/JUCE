@@ -62,7 +62,7 @@ void AudioProcessorEditor::initialise()
 
     // BEGIN SECTION A
 
-    splashScreen = new JUCESplashScreen (*this);
+//    splashScreen = new JUCESplashScreen (*this);
 
     // END SECTION A
 
