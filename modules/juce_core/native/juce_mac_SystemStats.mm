@@ -153,6 +153,10 @@ String SystemStats::getOperatingSystemName()
 
 String SystemStats::getDeviceDescription()
 {
+    if (auto* userInfo = [[NSProcessInfo processInfo] environment])
+        if (auto* simDeviceName = [userInfo objectForKey: @"SIMULATOR_MODEL_IDENTIFIER"])
+            return nsStringToJuce (simDeviceName);
+
    #if JUCE_IOS
     const char* name = "hw.machine";
    #else
@@ -166,22 +170,7 @@ String SystemStats::getDeviceDescription()
         HeapBlock<char> model (size);
 
         if (sysctlbyname (name, model, &size, nullptr, 0) >= 0)
-        {
-            String description (model.get());
-
-           #if JUCE_IOS
-            if (description == "x86_64") // running in the simulator
-            {
-                if (auto* userInfo = [[NSProcessInfo processInfo] environment])
-                {
-                    if (auto* simDeviceName = [userInfo objectForKey: @"SIMULATOR_DEVICE_NAME"])
-                        return nsStringToJuce (simDeviceName);
-                }
-            }
-          #endif
-
-            return description;
-        }
+            return String (model.get());
     }
 
     return {};
@@ -381,5 +370,39 @@ String SystemStats::getUniqueDeviceID()
     jassert (deviceId.isNotEmpty());
     return deviceId;
 }
+
+#if JUCE_MAC
+bool SystemStats::isAppSandboxEnabled()
+{
+    static const auto result = [&]
+    {
+        SecCodeRef ref = nullptr;
+
+        if (const auto err = SecCodeCopySelf (kSecCSDefaultFlags, &ref); err != noErr)
+            return false;
+
+        const CFUniquePtr<SecCodeRef> managedRef (ref);
+        CFDictionaryRef infoDict = nullptr;
+
+        if (const auto err = SecCodeCopySigningInformation (managedRef.get(), kSecCSDynamicInformation, &infoDict); err != noErr)
+            return false;
+
+        const CFUniquePtr<CFDictionaryRef> managedInfoDict (infoDict);
+        const void* entitlementsDict = nullptr;
+
+        if (! CFDictionaryGetValueIfPresent (managedInfoDict.get(), kSecCodeInfoEntitlementsDict, &entitlementsDict))
+            return false;
+
+        const void* flag = nullptr;
+
+        if (! CFDictionaryGetValueIfPresent (static_cast<CFDictionaryRef> (entitlementsDict), @"com.apple.security.app-sandbox", &flag))
+            return false;
+
+        return static_cast<bool> (CFBooleanGetValue (static_cast<CFBooleanRef> (flag)));
+    }();
+
+    return result;
+}
+#endif
 
 } // namespace juce
