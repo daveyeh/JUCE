@@ -224,6 +224,15 @@ plugin folders may be protected, so the build may require elevated permissions i
 installation to work correctly, or you may need to adjust the permissions of the destination
 folders.
 
+#### `JUCE_MODULES_ONLY`
+
+Only brings in targets for the built-in JUCE modules, and the `juce_add_module*` CMake functions.
+This is meant for highly custom use-cases where the `juce_add_gui_app` and `juce_add_plugin`
+functions are not required. Most importantly, the 'juceaide' helper tool is not built when this
+option is enabled, which may improve build times for established products that use other methods to
+handle plugin bundle structures, icons, plists, and so on. If this option is enabled, then
+`JUCE_ENABLE_MODULE_SOURCE_GROUPS` will have no effect.
+
 ### Functions
 
 #### `juce_add_<target>`
@@ -518,6 +527,17 @@ attributes directly to these creation functions, rather than adding them later.
   `Pitch Shift`, `Restoration`, `Reverb`, `Sampler`, `Spatial`, `Stereo`, `Surround`, `Synth`,
   `Tools`, `Up-Downmix`
 
+`VST3_MANIFEST_ENABLED`
+- May be either TRUE or FALSE. Defaults to FALSE. Set this to TRUE if you want a moduleinfo.json
+  file to be generated as part of the VST3 build. This may improve startup/scanning time for hosts
+  that understand the contents of this file. This setting is disabled by default because the
+  moduleinfo.json path can cause problems during code signing on macOS. Bundles containing a
+  moduleinfo.json may be rejected by code signing verification at any point in the future without
+  notice per https://developer.apple.com/library/archive/technotes/tn2206. If you enable this
+  setting, be aware that the code signature for the moduleinfo.json will be stored in its extended
+  file attributes. Therefore, you will need to ensure that these attributes are not changed or
+  removed when distributing the VST3.
+
 `AU_MAIN_TYPE`
 - Should be one of: `kAudioUnitType_Effect`, `kAudioUnitType_FormatConverter`,
   `kAudioUnitType_Generator`, `kAudioUnitType_MIDIProcessor`, `kAudioUnitType_Mixer`,
@@ -754,6 +774,21 @@ your target.
 This function sets the `CMAKE_<LANG>_FLAGS_<MODE>` to empty in the current directory and below,
 allowing alternative optimisation/debug flags to be supplied without conflicting with the
 CMake-supplied defaults.
+
+#### `juce_link_with_embedded_linux_subprocess`
+
+    juce_link_with_embedded_linux_subprocess(<target>)
+
+This function links the provided target with an interface library that generates a barebones 
+standalone executable file and embeds it as a binary resource. This binary resource is only used
+by the `juce_gui_extra` module and only when its `JUCE_WEB_BROWSER` capability is enabled. This
+executable will then be deployed into a temporary file only when the code is running in a
+non-standalone format, and will be used to host a WebKit view. This technique is used by audio
+plugins on Linux.
+
+This function is automatically called if necessary for all targets created by one of the JUCE target
+creation functions i.e. `juce_add_gui_app`, `juce_add_console_app` and `juce_add_gui_app`. You don't
+need to call this function manually in these cases.
 
 ### Targets
 

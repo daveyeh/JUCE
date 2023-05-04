@@ -159,6 +159,7 @@ public:
     static String getJuceSourceHFilename()                      { return "JuceHeader.h"; }
     static String getJuceLV2DefinesFilename()                   { return "JuceLV2Defines.h"; }
     static String getLV2FileWriterName()                        { return "juce_lv2_helper"; }
+    static String getVST3FileWriterName()                       { return "juce_vst3_helper"; }
 
     //==============================================================================
     template <class FileType>
@@ -291,6 +292,8 @@ public:
     bool isPluginAAXBypassDisabled() const            { return checkMultiChoiceVar (pluginCharacteristicsValue, Ids::pluginAAXDisableBypass); }
     bool isPluginAAXMultiMonoDisabled() const         { return checkMultiChoiceVar (pluginCharacteristicsValue, Ids::pluginAAXDisableMultiMono); }
 
+    bool isVst3ManifestEnabled() const                { return vst3ManifestEnabledValue.get(); }
+
     void disableStandaloneForARAPlugIn();
 
     static StringArray getAllAUMainTypeStrings() noexcept;
@@ -339,11 +342,11 @@ public:
     String getLV2URI() const        { return pluginLV2URIValue.get(); }
 
     //==============================================================================
-    bool isAUPluginHost();
-    bool isVSTPluginHost();
-    bool isVST3PluginHost();
-    bool isLV2PluginHost();
-    bool isARAPluginHost();
+    bool isAUPluginHost()   const;
+    bool isVSTPluginHost()  const;
+    bool isVST3PluginHost() const;
+    bool isLV2PluginHost()  const;
+    bool isARAPluginHost()  const;
 
     //==============================================================================
     bool shouldBuildTargetType (build_tools::ProjectType::Target::Type targetType) const noexcept;
@@ -494,7 +497,10 @@ public:
     bool isConfigFlagEnabled (const String& name, bool defaultIsEnabled = false) const;
 
     //==============================================================================
-    EnabledModulesList& getEnabledModules();
+    void createEnabledModulesList();
+
+          EnabledModulesList& getEnabledModules();
+    const EnabledModulesList& getEnabledModules() const;
 
     AvailableModulesList& getExporterPathsModulesList()  { return exporterPathsModulesList; }
     void rescanExporterPathModules (bool async = false);
@@ -548,6 +554,10 @@ private:
     void valueTreeChildOrderChanged (ValueTree&, int, int) override;
 
     //==============================================================================
+    template <typename This>
+    static auto& getEnabledModulesImpl (This&);
+
+    //==============================================================================
     struct ProjectFileModificationPoller  : private Timer
     {
         ProjectFileModificationPoller (Project& p);
@@ -576,7 +586,7 @@ private:
                                  pluginCodeValue, pluginChannelConfigsValue, pluginCharacteristicsValue, pluginAUExportPrefixValue, pluginAAXIdentifierValue,
                                  pluginAUMainTypeValue, pluginAUSandboxSafeValue, pluginVSTCategoryValue, pluginVST3CategoryValue, pluginAAXCategoryValue,
                                  pluginEnableARA, pluginARAAnalyzableContentValue, pluginARAFactoryIDValue, pluginARAArchiveIDValue, pluginARACompatibleArchiveIDsValue, pluginARATransformFlagsValue,
-                                 pluginVSTNumMidiInputsValue, pluginVSTNumMidiOutputsValue, pluginLV2URIValue;
+                                 pluginVSTNumMidiInputsValue, pluginVSTNumMidiOutputsValue, pluginLV2URIValue, vst3ManifestEnabledValue;
 
     //==============================================================================
     std::unique_ptr<EnabledModulesList> enabledModulesList;
@@ -652,6 +662,7 @@ private:
 
     std::unique_ptr<FileChooser> chooser;
     std::unique_ptr<ProjectSaver> saver;
+    ScopedMessageBox messageBox;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (Project)

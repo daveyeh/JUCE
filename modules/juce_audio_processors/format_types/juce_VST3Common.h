@@ -274,6 +274,34 @@ static std::optional<Steinberg::Vst::Speaker> getSpeakerType (const AudioChannel
         case AudioChannelSet::ambisonicACN33:
         case AudioChannelSet::ambisonicACN34:
         case AudioChannelSet::ambisonicACN35:
+        case AudioChannelSet::ambisonicACN36:
+        case AudioChannelSet::ambisonicACN37:
+        case AudioChannelSet::ambisonicACN38:
+        case AudioChannelSet::ambisonicACN39:
+        case AudioChannelSet::ambisonicACN40:
+        case AudioChannelSet::ambisonicACN41:
+        case AudioChannelSet::ambisonicACN42:
+        case AudioChannelSet::ambisonicACN43:
+        case AudioChannelSet::ambisonicACN44:
+        case AudioChannelSet::ambisonicACN45:
+        case AudioChannelSet::ambisonicACN46:
+        case AudioChannelSet::ambisonicACN47:
+        case AudioChannelSet::ambisonicACN48:
+        case AudioChannelSet::ambisonicACN49:
+        case AudioChannelSet::ambisonicACN50:
+        case AudioChannelSet::ambisonicACN51:
+        case AudioChannelSet::ambisonicACN52:
+        case AudioChannelSet::ambisonicACN53:
+        case AudioChannelSet::ambisonicACN54:
+        case AudioChannelSet::ambisonicACN55:
+        case AudioChannelSet::ambisonicACN56:
+        case AudioChannelSet::ambisonicACN57:
+        case AudioChannelSet::ambisonicACN58:
+        case AudioChannelSet::ambisonicACN59:
+        case AudioChannelSet::ambisonicACN60:
+        case AudioChannelSet::ambisonicACN61:
+        case AudioChannelSet::ambisonicACN62:
+        case AudioChannelSet::ambisonicACN63:
         case AudioChannelSet::wideLeft:
         case AudioChannelSet::wideRight:
         case AudioChannelSet::unknown:
@@ -388,6 +416,8 @@ namespace detail
         { k70_6,                        { X::left, X::right, X::centre,         X::leftSurroundRear, X::rightSurroundRear, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight, X::topSideLeft, X::topSideRight } },
 
         // The VST3 layout uses 'left/right' and 'left-of-center/right-of-center', but the JUCE layout uses 'left/right' and 'wide-left/wide-right'.
+        { k91_4,                        { X::wideLeft, X::wideRight, X::centre, X::LFE, X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight } },
+        { k90_4,                        { X::wideLeft, X::wideRight, X::centre,         X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight } },
         { k91_6,                        { X::wideLeft, X::wideRight, X::centre, X::LFE, X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight, X::topSideLeft, X::topSideRight } },
         { k90_6,                        { X::wideLeft, X::wideRight, X::centre,         X::leftSurroundRear, X::rightSurroundRear, X::left, X::right, X::leftSurroundSide, X::rightSurroundSide, X::topFrontLeft, X::topFrontRight, X::topRearLeft, X::topRearRight, X::topSideLeft, X::topSideRight } },
     };
@@ -400,7 +430,7 @@ namespace detail
 inline bool isLayoutTableValid()
 {
     for (const auto& item : detail::layoutTable)
-        if ((size_t) countNumberOfBits (item.arrangement) != item.channelOrder.size())
+        if ((size_t) countNumberOfBits ((uint64) item.arrangement) != item.channelOrder.size())
             return false;
 
     std::set<Steinberg::Vst::SpeakerArrangement> arrangements;
@@ -701,7 +731,7 @@ public:
         if (! validateLayouts<Direction::input, FloatType> (data.inputs, data.inputs + vstInputs, inputMap))
             return getBlankBuffer (usedChannels, (int) data.numSamples);
 
-        setUpInputChannels (data, (size_t) vstInputs, scratchBuffer, inputMap,  channels);
+        setUpInputChannels (data, (size_t) vstInputs, scratchBuffer, inputMap, channels);
         setUpOutputChannels (scratchBuffer, outputMap, channels);
 
         const auto channelPtr = channels.empty() ? scratchBuffer.getArrayOfWritePointers()
@@ -719,7 +749,7 @@ private:
     {
         for (size_t busIndex = 0; busIndex < map.size(); ++busIndex)
         {
-            const auto mapping = map[busIndex];
+            const auto& mapping = map[busIndex];
 
             if (! mapping.isClientActive())
                 continue;

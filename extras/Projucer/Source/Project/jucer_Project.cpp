@@ -103,6 +103,7 @@ Project::Project (const File& f)
 
     setFile (f);
 
+    createEnabledModulesList();
     initialiseProjectValues();
     initialiseMainGroup();
     initialiseAudioPluginValues();
@@ -368,6 +369,8 @@ void Project::initialiseAudioPluginValues()
     pluginVSTNumMidiOutputsValue.referTo     (projectRoot, Ids::pluginVSTNumMidiOutputs,    getUndoManager(), 16);
 
     pluginLV2URIValue.referTo                (projectRoot, Ids::lv2Uri,                     getUndoManager(), getDefaultLV2URI());
+
+    vst3ManifestEnabledValue.referTo         (projectRoot, Ids::vst3ManifestEnabled,        getUndoManager(), false);
 }
 
 void Project::updateOldStyleConfigList()
@@ -461,7 +464,8 @@ void Project::removeDefunctExporters()
             warningMessage << "\n"
                            << TRANS ("These exporters have been removed from the project. If you save the project they will be also erased from the .jucer file.");
 
-            AlertWindow::showMessageBoxAsync (MessageBoxIconType::WarningIcon, warningTitle, warningMessage);
+            auto options = MessageBoxOptions::makeOptionsOk (MessageBoxIconType::WarningIcon, warningTitle, warningMessage);
+            messageBox = AlertWindow::showScopedAsync (options, nullptr);
         }
     }
 }
@@ -677,6 +681,7 @@ Result Project::loadDocument (const File& file)
     projectRoot = newTree;
     projectRoot.addListener (this);
 
+    createEnabledModulesList();
     initialiseProjectValues();
     initialiseMainGroup();
     initialiseAudioPluginValues();
@@ -1259,6 +1264,8 @@ bool Project::shouldBuildTargetType (build_tools::ProjectType::Target::Type targ
             return shouldBuildVST();
         case Target::VST3PlugIn:
             return shouldBuildVST3();
+        case Target::VST3Helper:
+            return shouldBuildVST3() && isVst3ManifestEnabled();
         case Target::AAXPlugIn:
             return shouldBuildAAX();
         case Target::AudioUnitPlugIn:
@@ -1270,7 +1277,7 @@ bool Project::shouldBuildTargetType (build_tools::ProjectType::Target::Type targ
         case Target::UnityPlugIn:
             return shouldBuildUnityPlugin();
         case Target::LV2PlugIn:
-        case Target::LV2TurtleProgram:
+        case Target::LV2Helper:
             return shouldBuildLV2();
         case Target::AggregateTarget:
         case Target::SharedCodeTarget:
@@ -1534,6 +1541,14 @@ void Project::createAudioPluginPropertyEditors (PropertyListBuilder& props)
                    "If neither of these are selected, the appropriate one will be automatically added based on the \"Plugin is a synth\" option.");
     }
 
+    props.add (new ChoicePropertyComponent (vst3ManifestEnabledValue, "Plugin VST3 moduleinfo.json Enabled"),
+               "Check this box if you want a moduleinfo.json file to be generated as part of the VST3 build. "
+               "This may improve startup/scanning time for hosts that understand the contents of this file. "
+               "This setting is disabled by default because the moduleinfo.json path can cause problems during code signing on macOS. "
+               "Bundles containing a moduleinfo.json may be rejected by code signing verification at any point in the future without notice per https://developer.apple.com/library/archive/technotes/tn2206."
+               "If you enable this setting, be aware that the code signature for the moduleinfo.json will be stored in its extended file attributes. "
+               "Therefore, you will need to ensure that these attributes are not changed or removed when distributing the VST3.");
+
     props.add (new MultiChoicePropertyComponent (pluginAAXCategoryValue, "Plugin AAX Category", getAllAAXCategoryStrings(), getAllAAXCategoryVars()),
                "AAX category.");
 
@@ -1567,7 +1582,6 @@ void Project::createAudioPluginPropertyEditors (PropertyListBuilder& props)
 
         props.add (new TextPropertyComponent (pluginARACompatibleArchiveIDsValue, "Plugin ARA Compatible Document Archive IDs", 1024, true),
                    "List of compatible ARA Document Archive IDs - one per line");
-
     }
 }
 
@@ -2324,27 +2338,27 @@ int Project::getARATransformationFlags() const noexcept
 }
 
 //==============================================================================
-bool Project::isAUPluginHost()
+bool Project::isAUPluginHost() const
 {
     return getEnabledModules().isModuleEnabled ("juce_audio_processors") && isConfigFlagEnabled ("JUCE_PLUGINHOST_AU", false);
 }
 
-bool Project::isVSTPluginHost()
+bool Project::isVSTPluginHost() const
 {
     return getEnabledModules().isModuleEnabled ("juce_audio_processors") && isConfigFlagEnabled ("JUCE_PLUGINHOST_VST", false);
 }
 
-bool Project::isVST3PluginHost()
+bool Project::isVST3PluginHost() const
 {
     return getEnabledModules().isModuleEnabled ("juce_audio_processors") && isConfigFlagEnabled ("JUCE_PLUGINHOST_VST3", false);
 }
 
-bool Project::isLV2PluginHost()
+bool Project::isLV2PluginHost() const
 {
     return getEnabledModules().isModuleEnabled ("juce_audio_processors") && isConfigFlagEnabled ("JUCE_PLUGINHOST_LV2", false);
 }
 
-bool Project::isARAPluginHost()
+bool Project::isARAPluginHost() const
 {
     return (isVST3PluginHost() || isAUPluginHost()) && isConfigFlagEnabled ("JUCE_PLUGINHOST_ARA", false);
 }
@@ -2505,12 +2519,21 @@ Array<var> Project::getDefaultARATransformationFlags() const noexcept
 }
 
 //==============================================================================
-EnabledModulesList& Project::getEnabledModules()
+template <typename This>
+auto& Project::getEnabledModulesImpl (This& t)
 {
-    if (enabledModulesList == nullptr)
-        enabledModulesList.reset (new EnabledModulesList (*this, projectRoot.getOrCreateChildWithName (Ids::MODULES, nullptr)));
+    // This won't work until you've loaded a project!
+    jassert (t.enabledModulesList != nullptr);
 
-    return *enabledModulesList;
+    return *t.enabledModulesList;
+}
+
+      EnabledModulesList& Project::getEnabledModules()            { return getEnabledModulesImpl (*this); }
+const EnabledModulesList& Project::getEnabledModules() const      { return getEnabledModulesImpl (*this); }
+
+void Project::createEnabledModulesList()
+{
+    enabledModulesList = std::make_unique<EnabledModulesList> (*this, projectRoot.getOrCreateChildWithName (Ids::MODULES, nullptr));
 }
 
 static StringArray getModulePathsFromExporters (Project& project, bool onlyThisOS)

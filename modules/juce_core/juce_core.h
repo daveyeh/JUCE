@@ -219,6 +219,7 @@ namespace juce
     extern JUCE_API void JUCE_CALLTYPE logAssertion (const char* file, int line) noexcept;
 }
 
+#include "misc/juce_EnumHelpers.h"
 #include "memory/juce_Memory.h"
 #include "maths/juce_MathsFunctions.h"
 #include "memory/juce_ByteOrder.h"
@@ -276,6 +277,7 @@ JUCE_END_IGNORE_WARNINGS_MSVC
 #include "text/juce_LocalisedStrings.h"
 #include "text/juce_Base64.h"
 #include "misc/juce_Functional.h"
+#include "containers/juce_Span.h"
 #include "misc/juce_Result.h"
 #include "misc/juce_Uuid.h"
 #include "misc/juce_ConsoleApplication.h"
@@ -347,16 +349,16 @@ JUCE_END_IGNORE_WARNINGS_MSVC
 #include "streams/juce_AndroidDocumentInputSource.h"
 
 #if JUCE_CORE_INCLUDE_OBJC_HELPERS && (JUCE_MAC || JUCE_IOS)
- #include "native/juce_mac_ObjCHelpers.h"
+ #include "native/juce_ObjCHelpers_mac.h"
 #endif
 
 #if JUCE_CORE_INCLUDE_COM_SMART_PTR && JUCE_WINDOWS
- #include "native/juce_win32_ComSmartPtr.h"
+ #include "native/juce_ComSmartPtr_windows.h"
 #endif
 
 #if JUCE_CORE_INCLUDE_JNI_HELPERS && JUCE_ANDROID
  #include <jni.h>
- #include "native/juce_android_JNIHelpers.h"
+ #include "native/juce_JNIHelpers_android.h"
 #endif
 
 #if JUCE_UNIT_TESTS
