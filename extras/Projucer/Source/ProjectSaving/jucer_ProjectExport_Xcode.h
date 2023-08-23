@@ -1291,7 +1291,7 @@ public:
                     dependencyIDs.add (helperTarget->addDependencyFor (*this));
             }
 
-            if (type == VST3PlugIn && owner.project.isVst3ManifestEnabled())
+            if (type == VST3PlugIn)
             {
                 if (auto* helperTarget = owner.getTargetOfType (VST3Helper))
                     dependencyIDs.add (helperTarget->addDependencyFor (*this));
@@ -1319,6 +1319,11 @@ public:
             owner.addObject (v);
         }
 
+        bool shouldUseHardenedRuntime() const
+        {
+            return type != VST3Helper && type != LV2Helper && owner.isHardenedRuntimeEnabled();
+        }
+
         //==============================================================================
         String getTargetAttributes() const
         {
@@ -1341,7 +1346,7 @@ public:
                                                                   || owner.getProject().isAUPluginHost());
             capabilities["Push"]                  = owner.isPushNotificationsEnabled();
             capabilities["Sandbox"]               = type == Target::AudioUnitv3PlugIn || owner.isAppSandboxEnabled();
-            capabilities["HardenedRuntime"]       = owner.isHardenedRuntimeEnabled();
+            capabilities["HardenedRuntime"]       = shouldUseHardenedRuntime();
 
             if (owner.iOS && owner.isiCloudPermissionsEnabled())
                 capabilities["com.apple.iCloud"] = true;
@@ -1397,7 +1402,7 @@ public:
             if (owner.isPushNotificationsEnabled()
              || owner.isAppGroupsEnabled()
              || owner.isAppSandboxEnabled()
-             || owner.isHardenedRuntimeEnabled()
+             || shouldUseHardenedRuntime()
              || owner.isNetworkingMulticastEnabled()
              || (owner.isiOS() && owner.isiCloudPermissionsEnabled())
              || (owner.isiOS() && owner.getProject().isAUPluginHost()))
@@ -1687,7 +1692,7 @@ public:
 
             s.set ("CONFIGURATION_BUILD_DIR", addQuotesIfRequired (adjustedConfigBuildDir));
 
-            if (owner.isHardenedRuntimeEnabled())
+            if (shouldUseHardenedRuntime())
                 s.set ("ENABLE_HARDENED_RUNTIME", "YES");
 
             String gccVersion ("com.apple.compilers.llvm.clang.1_0");
@@ -1875,7 +1880,7 @@ public:
             flags = getCleanedStringArray (flags);
         }
 
-        //==========================================================================
+        //==============================================================================
         void writeInfoPlistFile() const
         {
             if (! shouldCreatePList())
@@ -2125,7 +2130,7 @@ private:
             if (target->type == XcodeTarget::LV2Helper
                 && project.getEnabledModules().isModuleEnabled ("juce_audio_plugin_client"))
             {
-                const auto path = rebaseFromProjectFolderToBuildTarget (getLV2HelperProgramSource ());
+                const auto path = rebaseFromProjectFolderToBuildTarget (getLV2HelperProgramSource());
                 addFile (FileOptions().withRelativePath ({ expandPath (path.toUnixStyle()), path.getRoot() })
                                       .withSkipPCHEnabled (true)
                                       .withCompilationEnabled (true)
@@ -2135,18 +2140,15 @@ private:
             }
 
             if (target->type == XcodeTarget::VST3Helper
-                && project.getEnabledModules().isModuleEnabled ("juce_audio_processors"))
+                && project.getEnabledModules().isModuleEnabled ("juce_audio_plugin_client"))
             {
-                for (const auto& source : getVST3HelperProgramSources (*this))
-                {
-                    const auto path = rebaseFromProjectFolderToBuildTarget (source);
-                    addFile (FileOptions().withRelativePath ({ expandPath (path.toUnixStyle()), path.getRoot() })
-                                          .withSkipPCHEnabled (true)
-                                          .withCompilationEnabled (true)
-                                          .withInhibitWarningsEnabled (true)
-                                          .withCompilerFlags ("-std=c++17 -fobjc-arc")
-                                          .withXcodeTarget (target));
-                }
+                const auto path = rebaseFromProjectFolderToBuildTarget (getVST3HelperProgramSource());
+                addFile (FileOptions().withRelativePath ({ expandPath (path.toUnixStyle()), path.getRoot() })
+                                      .withSkipPCHEnabled (true)
+                                      .withCompilationEnabled (true)
+                                      .withInhibitWarningsEnabled (true)
+                                      .withCompilerFlags ("-std=c++17 -fobjc-arc")
+                                      .withXcodeTarget (target));
             }
 
             auto targetName = String (target->getName());
@@ -2367,18 +2369,13 @@ private:
                         }
                     }
                 }
-                else if (target->type == XcodeTarget::VST3PlugIn && project.isVst3ManifestEnabled())
+                else if (target->type == XcodeTarget::VST3PlugIn)
                 {
-                    // Generate the manifest
                     script << "\"$CONFIGURATION_BUILD_DIR/" << Project::getVST3FileWriterName() << "\" "
                               "-create "
                               "-version " << project.getVersionString().quoted() << " "
                               "-path \"$CONFIGURATION_BUILD_DIR/$FULL_PRODUCT_NAME\" "
-                              "-output \"$CONFIGURATION_BUILD_DIR/$FULL_PRODUCT_NAME/Contents/moduleinfo.json\"\n";
-                    // Sign the manifest (a prerequisite of signing the containing bundle)
-                    script << "xcrun codesign -f -s - \"$CONFIGURATION_BUILD_DIR/$FULL_PRODUCT_NAME/Contents/moduleinfo.json\"\n";
-                    // Sign the full bundle
-                    script << "xcrun codesign -f -s - \"$CONFIGURATION_BUILD_DIR/$FULL_PRODUCT_NAME\"\n";
+                              "-output \"$CONFIGURATION_BUILD_DIR/$FULL_PRODUCT_NAME/Contents/Resources/moduleinfo.json\"\n";
                 }
 
                 target->addShellScriptBuildPhase ("Update manifest", script);
@@ -2986,7 +2983,7 @@ private:
         output << "\t};\n\trootObject = " << createID ("__root") << " /* Project object */;\n}\n";
     }
 
-    String addFileReference (String pathString, String fileType = {}) const
+    String addFileReference (String pathString, const String& fileType = {}) const
     {
         String sourceTree ("SOURCE_ROOT");
         build_tools::RelativePath path (pathString, build_tools::RelativePath::unknown);
@@ -3004,7 +3001,7 @@ private:
         return addFileOrFolderReference (pathString, sourceTree, fileType.isEmpty() ? getFileType (pathString) : fileType);
     }
 
-    String addFileOrFolderReference (const String& pathString, String sourceTree, String fileType) const
+    String addFileOrFolderReference (const String& pathString, const String& sourceTree, const String& fileType) const
     {
         auto fileRefID = createFileRefID (pathString);
         auto filename = build_tools::RelativePath (pathString, build_tools::RelativePath::unknown).getFileName();

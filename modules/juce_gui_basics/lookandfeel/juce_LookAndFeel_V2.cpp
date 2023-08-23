@@ -615,6 +615,11 @@ bool LookAndFeel_V2::isProgressBarOpaque (ProgressBar& progressBar)
     return progressBar.findColour (ProgressBar::backgroundColourId).isOpaque();
 }
 
+ProgressBar::Style LookAndFeel_V2::getDefaultProgressBarStyle (const ProgressBar&)
+{
+    return ProgressBar::Style::linear;
+}
+
 bool LookAndFeel_V2::areScrollbarButtonsVisible()
 {
     return true;
@@ -1373,13 +1378,13 @@ void LookAndFeel_V2::drawLinearSliderBackground (Graphics& g, int x, int y, int 
     g.strokePath (indent, PathStrokeType (0.5f));
 }
 
-void LookAndFeel_V2::drawLinearSliderOutline (Graphics& g, int, int, int width, int height,
+void LookAndFeel_V2::drawLinearSliderOutline (Graphics& g, int, int, int, int,
                                               const Slider::SliderStyle, Slider& slider)
 {
     if (slider.getTextBoxPosition() == Slider::NoTextBox)
     {
         g.setColour (slider.findColour (Slider::textBoxOutlineColourId));
-        g.drawRect (0, 0, width, height, 1);
+        g.drawRect (0, 0, slider.getWidth(), slider.getHeight(), 1);
     }
 }
 

@@ -195,9 +195,6 @@ public:
         if (context.renderer != nullptr)
             context.renderer->openGLContextClosing();
 
-        if (vertexArrayObject != 0)
-            context.extensions.glDeleteVertexArrays (1, &vertexArrayObject);
-
         associatedObjectNames.clear();
         associatedObjects.clear();
         cachedImageFrameBuffer.release();
@@ -400,12 +397,12 @@ public:
 
             if (context.renderer != nullptr)
             {
+                OpenGLRendering::SavedBinding<OpenGLRendering::TraitsVAO> vaoBinding;
+
                 glViewport (0, 0, viewportArea.getWidth(), viewportArea.getHeight());
                 context.currentRenderScale = currentAreaAndScale.scale;
                 context.renderer->renderOpenGL();
                 clearGLError();
-
-                bindVertexArray();
             }
 
             if (context.renderComponents)
@@ -486,13 +483,6 @@ public:
         }
     }
 
-    void bindVertexArray() noexcept
-    {
-        if (shouldUseCustomVAO())
-            if (vertexArrayObject != 0)
-                context.extensions.glBindVertexArray (vertexArrayObject);
-    }
-
     void checkViewportBounds()
     {
         auto screenBounds = component.getTopLevelComponent()->getScreenBounds();
@@ -537,7 +527,7 @@ public:
 
     void drawComponentBuffer()
     {
-        if (! isCoreProfile())
+        if (! OpenGLRendering::TraitsVAO::isCoreProfile())
             glEnable (GL_TEXTURE_2D);
 
        #if JUCE_WINDOWS
@@ -552,7 +542,6 @@ public:
         }
 
         glBindTexture (GL_TEXTURE_2D, cachedImageFrameBuffer.getTextureID());
-        bindVertexArray();
 
         const Rectangle<int> cacheBounds (cachedImageFrameBuffer.getWidth(), cachedImageFrameBuffer.getHeight());
         context.copyTexture (cacheBounds, cacheBounds, cacheBounds.getWidth(), cacheBounds.getHeight(), false);
@@ -634,12 +623,6 @@ public:
 
         gl::loadFunctions();
 
-        if (shouldUseCustomVAO())
-        {
-            context.extensions.glGenVertexArrays (1, &vertexArrayObject);
-            bindVertexArray();
-        }
-
        #if JUCE_DEBUG
         if (getOpenGLVersion() >= Version { 4, 3 } && glDebugMessageCallback != nullptr)
         {
@@ -673,40 +656,6 @@ public:
             context.renderer->newOpenGLContextCreated();
 
         return InitResult::success;
-    }
-
-    bool isCoreProfile() const
-    {
-       #if JUCE_OPENGL_ES
-        return true;
-       #else
-        clearGLError();
-        GLint mask = 0;
-        glGetIntegerv (GL_CONTEXT_PROFILE_MASK, &mask);
-
-        // The context isn't aware of the profile mask, so it pre-dates the core profile
-        if (glGetError() == GL_INVALID_ENUM)
-            return false;
-
-        // Also assumes a compatibility profile if the mask is completely empty for some reason
-        return (mask & (GLint) GL_CONTEXT_CORE_PROFILE_BIT) != 0;
-       #endif
-    }
-
-    /*  Returns true if the context requires a non-zero vertex array object (VAO) to be bound.
-
-        If the context is a compatibility context, we can just pretend that VAOs don't exist,
-        and use the default VAO all the time instead. This provides a more consistent experience
-        in user code, which might make calls (like glVertexPointer()) that only work when VAO 0 is
-        bound in OpenGL 3.2+.
-    */
-    bool shouldUseCustomVAO() const
-    {
-       #if JUCE_OPENGL_ES
-        return false;
-       #else
-        return isCoreProfile();
-       #endif
     }
 
     //==============================================================================
@@ -1005,7 +954,6 @@ public:
     RectangleList<int> validArea;
     Rectangle<int> lastScreenBounds;
     AffineTransform transform;
-    GLuint vertexArrayObject = 0;
     LockedAreaAndScale areaAndScale;
 
     StringArray associatedObjectNames;
@@ -1453,7 +1401,7 @@ void* OpenGLContext::getRawContext() const noexcept
 bool OpenGLContext::isCoreProfile() const
 {
     auto* c = getCachedImage();
-    return c != nullptr && c->isCoreProfile();
+    return c != nullptr && OpenGLRendering::TraitsVAO::isCoreProfile();
 }
 
 OpenGLContext::CachedImage* OpenGLContext::getCachedImage() const noexcept
@@ -1570,6 +1518,8 @@ void OpenGLContext::copyTexture (const Rectangle<int>& targetClipArea,
 
     if (areShadersAvailable())
     {
+        OpenGLRendering::SavedBinding<OpenGLRendering::TraitsVAO> vaoBinding;
+
         struct OverlayShaderProgram  : public ReferenceCountedObject
         {
             OverlayShaderProgram (OpenGLContext& context)
@@ -1660,9 +1610,7 @@ void OpenGLContext::copyTexture (const Rectangle<int>& targetClipArea,
         auto& program = OverlayShaderProgram::select (*this);
         program.params.set ((float) contextWidth, (float) contextHeight, anchorPosAndTextureSize.toFloat(), flippedVertically);
 
-        GLuint vertexBuffer = 0;
-        extensions.glGenBuffers (1, &vertexBuffer);
-        extensions.glBindBuffer (GL_ARRAY_BUFFER, vertexBuffer);
+        OpenGLRendering::SavedBinding<OpenGLRendering::TraitsArrayBuffer> savedArrayBuffer;
         extensions.glBufferData (GL_ARRAY_BUFFER, sizeof (vertices), vertices, GL_STATIC_DRAW);
 
         auto index = (GLuint) program.params.positionAttribute.attributeID;
@@ -1673,11 +1621,7 @@ void OpenGLContext::copyTexture (const Rectangle<int>& targetClipArea,
         if (extensions.glCheckFramebufferStatus (GL_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE)
         {
             glDrawArrays (GL_TRIANGLE_STRIP, 0, 4);
-
-            extensions.glBindBuffer (GL_ARRAY_BUFFER, 0);
-            extensions.glUseProgram (0);
             extensions.glDisableVertexAttribArray (index);
-            extensions.glDeleteBuffers (1, &vertexBuffer);
         }
         else
         {

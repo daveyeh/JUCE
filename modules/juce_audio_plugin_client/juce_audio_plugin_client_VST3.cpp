@@ -47,9 +47,9 @@ JUCE_BEGIN_NO_SANITIZE ("vptr")
 #include <juce_audio_plugin_client/detail/juce_CheckSettingMacros.h>
 #include <juce_audio_plugin_client/detail/juce_IncludeSystemHeaders.h>
 #include <juce_audio_plugin_client/detail/juce_PluginUtilities.h>
-#include <juce_audio_plugin_client/detail/juce_WindowsHooks.h>
 #include <juce_audio_plugin_client/detail/juce_LinuxMessageThread.h>
 #include <juce_audio_plugin_client/detail/juce_VSTWindowUtilities.h>
+#include <juce_gui_basics/native/juce_WindowsHooks_windows.h>
 
 #include <juce_audio_processors/format_types/juce_LegacyAudioParameter.cpp>
 #include <juce_audio_processors/utilities/juce_FlagCache.h>
@@ -371,7 +371,7 @@ static QueryInterfaceResult queryAdditionalInterfaces (AudioProcessor* processor
 
     void* obj = nullptr;
 
-    if (auto* extensions = dynamic_cast<VST3ClientExtensions*> (processor))
+    if (auto* extensions = processor->getVST3ClientExtensions())
     {
         const auto result = (extensions->*member) (targetIID, &obj);
         return { result, obj };
@@ -1523,7 +1523,7 @@ private:
     {
         audioProcessor = newAudioProcessor;
 
-        if (auto* extensions = dynamic_cast<VST3ClientExtensions*> (audioProcessor->get()))
+        if (auto* extensions = audioProcessor->get()->getVST3ClientExtensions())
         {
             extensions->setIComponentHandler (componentHandler);
             extensions->setIHostApplication (hostContext.get());
@@ -3082,7 +3082,7 @@ public:
                     {
                         if (isFirstBus)
                         {
-                            if (auto* extensions = dynamic_cast<VST3ClientExtensions*> (pluginInstance))
+                            if (auto* extensions = pluginInstance->getVST3ClientExtensions())
                                 return extensions->getPluginHasMainInput() ? Vst::kMain : Vst::kAux;
 
                             return Vst::kMain;
@@ -3186,10 +3186,10 @@ public:
 
         if (type == Vst::kAudio)
         {
-            const auto numInputBuses  = getNumAudioBuses (true);
-            const auto numOutputBuses = getNumAudioBuses (false);
+            const auto numPublicInputBuses  = getNumAudioBuses (true);
+            const auto numPublicOutputBuses = getNumAudioBuses (false);
 
-            if (! isPositiveAndBelow (index, dir == Vst::kInput ? numInputBuses : numOutputBuses))
+            if (! isPositiveAndBelow (index, dir == Vst::kInput ? numPublicInputBuses : numPublicOutputBuses))
                 return kResultFalse;
 
             // The host is allowed to enable/disable buses as it sees fit, so the plugin needs to be
@@ -3212,11 +3212,20 @@ public:
 
             AudioProcessor::BusesLayout desiredLayout;
 
-            for (auto i = 0; i < numInputBuses; ++i)
-                desiredLayout.inputBuses.add (bufferMapper.getRequestedLayoutForInputBus ((size_t) i));
+            for (const auto isInput : { true, false })
+            {
+                const auto numPublicBuses = isInput ? numPublicInputBuses : numPublicOutputBuses;
+                auto& layoutBuses = isInput ? desiredLayout.inputBuses : desiredLayout.outputBuses;
 
-            for (auto i = 0; i < numOutputBuses; ++i)
-                desiredLayout.outputBuses.add (bufferMapper.getRequestedLayoutForOutputBus ((size_t) i));
+                for (auto i = 0; i < numPublicBuses; ++i)
+                {
+                    layoutBuses.add (isInput ? bufferMapper.getRequestedLayoutForInputBus ((size_t) i)
+                                             : bufferMapper.getRequestedLayoutForOutputBus ((size_t) i));
+                }
+
+                while (layoutBuses.size() < pluginInstance->getBusCount (isInput))
+                    layoutBuses.add (AudioChannelSet::disabled());
+            }
 
             const auto prev = pluginInstance->getBusesLayout();
 
@@ -3954,8 +3963,10 @@ public:
 
     tresult PLUGIN_API getCompatibilityJSON (IBStream* stream) override
     {
+        const ScopedJuceInitialiser_GUI libraryInitialiser;
+
         auto filter = createPluginFilterOfType (AudioProcessor::WrapperType::wrapperType_VST3);
-        auto* extensions = dynamic_cast<const VST3ClientExtensions*> (filter.get());
+        auto* extensions = filter->getVST3ClientExtensions();
 
         if (extensions == nullptr || extensions->getCompatibleClasses().empty())
             return kResultFalse;

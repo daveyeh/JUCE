@@ -1,8 +1,171 @@
 JUCE breaking changes
 =====================
 
-develop
-=======
+Version 7.0.7
+=============
+
+Change
+------
+The minimum supported CMake version is now 3.22.
+
+Possible Issues
+---------------
+It will no longer be possible to configure JUCE projects with CMake versions
+between 3.15 and 3.21 inclusive.
+
+Workaround
+----------
+No workaround is available. Newer versions of CMake can be obtained from the
+official download page, or through system package managers.
+
+Rationale
+---------
+Moving to CMake 3.22 improves consistency with the Projucer's Android exporter,
+which already requires CMake 3.22. It also allows us to make use of the
+XCODE_EMBED_APP_EXTENSIONS property (introduced in CMake 3.21), fixing an
+issue when archiving AUv3 plugins.
+
+
+Version 7.0.6
+=============
+
+Change
+------
+Thread::wait and WaitableEvent::wait now take a double rather than an int to
+indicate the number of milliseconds to wait.
+
+Possible Issues
+---------------
+Calls to either wait function may trigger warnings.
+
+Workaround
+----------
+Explicitly cast the value to double.
+
+Rationale
+---------
+Changing to double allows sub-millisecond waits which was important for
+supporting changes to the HighResolutionTimer.
+
+
+Change
+------
+RealtimeOptions member workDurationMs was replaced by three optional member
+variables in RealtimeOptions, and all RealtimeOptions member variables were
+marked private.
+
+Possible Issues
+---------------
+Trying to construct a RealtimeOptions object with one or two values, or access
+any of its member variables, will no longer compile.
+
+Workaround
+----------
+Use the withMember functions to construct the object, and the getter functions
+to access the member variable values.
+
+Rationale
+---------
+The new approach improves the flexibility for users to specify realtime thread
+options on macOS/iOS and improves the flexibility for the API to evolve without
+introducing further breaking changes.
+
+
+Change
+------
+JUCE module compilation files with a platform suffix are now checked case
+insensitively for CMake builds.
+
+Possible Issues
+---------------
+If a JUCE module compilation file ends in a specific platform suffix but does
+not match the case for the string previously checked by the CMake
+implementation, it may have compiled for all platforms. Now, it will only
+compile for the platform specified by the suffix.
+
+Workaround
+----------
+In most cases this was probably a bug, in other cases rename the file to remove
+the platform suffix.
+
+Rationale
+---------
+This change improves consistency between the Projucer and CMake integrations.
+
+
+Change
+------
+An undocumented feature that allowed JUCE module compilation files to compile
+for a specific platform or subset of platforms by declaring the platform name
+followed by an underscore, was removed.
+
+Possible Issues
+---------------
+If a JUCE module compilation file contains a matching platform suffix followed
+by an underscore and is loaded by the Projucer it will no longer compile for
+just that platform.
+
+Workaround
+----------
+Use the suffix of the name only. If the undocumented feature was used to select
+multiple platforms, make multiple separate files for each of the required
+platforms.
+
+Rationale
+---------
+This change improves consistency between the Projucer and CMake integrations.
+Given the functionality was undocumented, the ease of a workaround, and the
+added complexity required for CMake support, the functionality was removed.
+
+
+Change
+------
+Unique device IDs on iOS now use the OS provided 'identifierForVendor'.
+OnlineUnlockStatus has been updated to handle the iOS edge-case where a device
+ID query might return an empty String.
+
+Possible Issues
+---------------
+The License checks using InAppPurchases, getLocalMachineIDs(), and
+getUniqueDeviceID() may return an empty String if iOS 'is not ready'. This can
+occur for example if the device has restarted but has not yet been unlocked.
+
+Workaround
+----------
+InAppPurchase has been updated to handle this and propagate the error
+accordingly. The relevant methods have been updated to return a Result object
+that can be queried for additional information on failure.
+
+Rationale
+---------
+Apple have introduced restrictions on device identification rendering our
+previous methods unsuitable.
+
+
+Change
+------
+AudioProcessor::getAAXPluginIDForMainBusConfig() has been deprecated.
+
+Possible Issues
+---------------
+Any AudioProcessor overriding this method will fail to compile.
+
+Workaround
+----------
+- Create an object which inherits from AAXClientExtensions.
+- In the object override and implement getPluginIDForMainBusConfig().
+- In the AudioProcessor override getAAXClientExtensions() and return a pointer
+  to the object.
+
+Rationale
+---------
+Additional AAX specific functionality was required in the audio processor.
+Rather than continuing to grow and expand the AudioProcessor class with format
+specific functionality, separating this concern into a new class allows for
+greater expansion for those that need it without burdening those that don't.
+Moving this function into this class improves consistency both with the new
+functionality and with similar functionality for the VST2 and VST3 formats.
+
 
 Change
 ------
@@ -24,8 +187,9 @@ to switch to using SystemStats::getMachineIdentifiers() instead.
 
 Rationale
 ---------
-This update ensures the generation of more stable and reliable unique device IDs,
-while also maintaining backward compatibility with the previous ID generation methods.
+This update ensures the generation of more stable and reliable unique device
+IDs, while also maintaining backward compatibility with the previous ID
+generation methods.
 
 
 Change
@@ -921,7 +1085,7 @@ querying the capabilities of the current context at runtime.
 
 Change
 ------
-The minimum support CMake version is now 3.15.
+The minimum supported CMake version is now 3.15.
 
 Possible Issues
 ---------------
