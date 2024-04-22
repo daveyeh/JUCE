@@ -758,7 +758,11 @@ public:
             abortLock();
 
             {
-                const std::scoped_lock lock { callbackMutex, listMutex };
+                const std::scoped_lock lock {
+#if JUCE_MAC
+                    callbackMutex,
+#endif
+                    listMutex };
                 images.remove (x);
             }
 
