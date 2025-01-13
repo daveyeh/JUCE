@@ -463,10 +463,7 @@ static std::vector<ShapedGlyph> lowLevelShape (const String& string,
     auto nativeFont = font.getNativeDetails().font;
 
     if (nativeFont == nullptr)
-    {
-        jassertfalse;
         return {};
-    }
 
     hb_shape (nativeFont.get(), buffer.get(), features.data(), (unsigned int) features.size());
 
@@ -1090,7 +1087,9 @@ struct Shaper
 
         auto glyphsIt = shapedGlyphs.find (startFrom);
 
-        if (glyphsIt == shapedGlyphs.end())
+        // The stored glyphs data can be empty if there are input codepoints for which we failed to
+        // resolve a valid Typeface::Ptr.
+        if (glyphsIt == shapedGlyphs.end() || glyphsIt->value.data->empty())
             return {};
 
         WrappedGlyphs result;
@@ -1398,7 +1397,10 @@ void SimpleShapedText::shape (const String& data,
 
                 const auto end = (int64) glyphsInVisualOrder.size();
 
-                glyphLookup.set<MergeEqualItems::no> (s.textRange, { { start, end }, ltr });
+                for (auto i = start; i < end; ++i)
+                    glyphsInVisualOrder[(size_t) i].cluster += lineRange.getStart();
+
+                glyphLookup.set<MergeEqualItems::no> (s.textRange + lineRange.getStart(), { { start, end }, ltr });
                 resolvedFonts.set ({ start, end }, s.font);
             }
 
@@ -1470,5 +1472,73 @@ Range<int64> SimpleShapedText::getTextRange (int64 glyphIndex) const
 
     return Range<int64>::withStartAndLength (cluster, std::max ((int64) 1, nextAdjacentCluster - cluster));
 }
+
+#if JUCE_UNIT_TESTS
+
+struct SimpleShapedTextTests : public UnitTest
+{
+    SimpleShapedTextTests()
+        : UnitTest ("SimpleShapedText", UnitTestCategories::text)
+    {
+    }
+
+    static constexpr const char* testStrings[]
+    {
+        "Some trivial text",
+        "Text with \r\n\r\n line feed and new line characters",
+        "\nPrepending new line character",
+        "\n\nMultiple prepending new line characters",
+        "\n\nMultiple prepending and trailing line feed or new line characters\n\r\n",
+        "Try right-clicking on a slider for an options menu. \n\nAlso, holding down CTRL while dragging will turn on a slider's velocity-sensitive mode",
+    };
+
+    void runTest (const char* text, float maxWidth)
+    {
+        const auto defaultTypeface = Font::getDefaultTypefaceForFont (FontOptions{});
+
+        if (defaultTypeface == nullptr)
+        {
+            DBG ("Skipping test: No default typeface found!");
+            return;
+        }
+
+        String testString { text };
+
+        SimpleShapedText st { &testString, ShapedTextOptions{}.withFont (FontOptions { defaultTypeface })
+                                                              .withMaxWidth (maxWidth) };
+
+        auto success = true;
+
+        for (int64 glyphIndex = 0; glyphIndex < st.getNumGlyphs(); ++glyphIndex)
+        {
+            const auto textRange = st.getTextRange (glyphIndex);
+
+            // This assumption holds for LTR text if no ligatures are used
+            success &= textRange.getStart() == glyphIndex && textRange.getLength() == 1;
+        }
+
+        expect (success, String { "Failed for test string: " } + testString.replace ("\r", "<CR>")
+                                                                           .replace ("\n", "<LF>"));
+    }
+
+    void runTest() override
+    {
+        beginTest ("getTextRange: LTR Latin text without ligatures - no soft breaks");
+        {
+            for (auto* testString : testStrings)
+                runTest (testString, 100'000.0f);
+        }
+
+        beginTest ("getTextRange: LTR Latin text without ligatures - with soft breaks");
+        {
+            for (auto* testString : testStrings)
+                runTest (testString, 60.0f);
+        }
+    }
+};
+
+static SimpleShapedTextTests simpleShapedTextTests;
+
+#endif
 
 } // namespace juce
