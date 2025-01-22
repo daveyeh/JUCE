@@ -768,11 +768,7 @@ public:
             abortLock();
 
             {
-                const std::scoped_lock lock {
-//#if JUCE_MAC
-                    callbackMutex,
-//#endif
-                    listMutex };
+                const std::scoped_lock lock { callbackMutex, listMutex };
                 images.remove (x);
             }
 
@@ -797,19 +793,9 @@ public:
             auto result = RenderStatus::noWork;
 
             const std::scoped_lock lock { callbackMutex, listMutex };
-//#if JUCE_WINDOWS
-            auto initSize = images.size();
-//#endif
+
             for (auto* x : images)
             {
-//#if JUCE_WINDOWS
-                if (images.size() != initSize)
-                {
-                    listMutex.unlock();
-                    break;
-                }
-//#endif
-
                 listMutex.unlock();
                 const ScopeGuard scope { [&] { listMutex.lock(); } };
 
