@@ -798,16 +798,16 @@ public:
 
             const std::scoped_lock lock { callbackMutex, listMutex };
 //#if JUCE_WINDOWS
-            auto initSize = images.size();
+            //auto initSize = images.size();
 //#endif
             for (auto* x : images)
             {
 //#if JUCE_WINDOWS
-                if (images.size() != initSize)
-                {
-                    listMutex.unlock();
-                    break;
-                }
+                //if (images.size() != initSize)
+                //{
+                //    listMutex.unlock();
+                //    break;
+                //}
 //#endif
 
                 listMutex.unlock();
