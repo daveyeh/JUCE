@@ -2134,10 +2134,11 @@ public:
     DiscoveryInfoPanel (State<ci::MUID> m, State<Model::DeviceInfo> s)
         : muidState (m), state (s)
     {
+        const auto setStateCallback = [this] { setStateFromUI(); };
         [&] (auto&&... item)
         {
             (addAndMakeVisible (item), ...);
-            ((item.onCommit ([this] { setStateFromUI(); })), ...);
+            ((item.onCommit (setStateCallback)), ...);
         } (manufacturer, family, modelNumber, revision, maxSysExSize);
 
         [&] (auto&&... item)
@@ -2650,8 +2651,9 @@ private:
                     return;
                 }
 
+                constexpr auto isEditable = editable == Editable::yes;
                 const auto canSetFull = item->canSet != Model::CanSet::none
-                                        || editable == Editable::yes;
+                                        || isEditable;
                 setFull.setEnabled (canSetFull);
                 setPartial.setEnabled (item->canSet == Model::CanSet::partial);
                 get.setEnabled (item->canGet);
@@ -2704,7 +2706,9 @@ public:
     explicit PropertyInfoPanel (State<Model::Properties> s)
         : state (s)
     {
-        if constexpr (editable == Editable::yes)
+        constexpr auto isEditable = editable == Editable::yes;
+
+        if constexpr (isEditable)
         {
 
             addAndMakeVisible (canSet);
@@ -2716,11 +2720,13 @@ public:
             addAndMakeVisible (canSetField);
         }
 
+        const auto updateStateCallback = [this] { updateStateFromUI(); };
+
         [&] (auto&&... args)
         {
             (addAndMakeVisible (args), ...);
-            (args.setClickingTogglesState (editable == Editable::yes), ...);
-            ((args.onClick = [this] { updateStateFromUI(); }), ...);
+            (args.setClickingTogglesState (isEditable), ...);
+            ((args.onClick = updateStateCallback), ...);
         } (canGet,
            canSubscribe,
            canPaginate,
@@ -2737,11 +2743,11 @@ public:
         [&] (auto&&... args)
         {
             (addAndMakeVisible (args), ...);
-            (args.setReadOnly (editable == Editable::no), ...);
+            (args.setReadOnly (! isEditable), ...);
             (args.setMultiLine (true), ...);
             ((args.onReturnKey = args.onEscapeKey
                                = args.onFocusLost
-                               = [this] { updateStateFromUI(); }), ...);
+                               = updateStateCallback), ...);
         } (schema, mediaTypes, columns);
 
         addAndMakeVisible (name);
@@ -3707,11 +3713,15 @@ public:
 
     void resized() override
     {
-        tabs.setBounds (getLocalBounds());
+        auto bounds = getLocalBounds();
+        auto buttonStrip = bounds.getWidth() < 650 ? bounds.removeFromTop (tabs.getTabBarDepth())
+                                                   : getLocalBounds().removeFromTop (tabs.getTabBarDepth());
 
-        const auto buttonBounds = getLocalBounds().removeFromTop (tabs.getTabBarDepth())
-                                                  .removeFromRight (300)
-                                                  .reduced (2);
+        tabs.setBounds (bounds);
+
+        const auto buttonBounds = buttonStrip.removeFromTop (tabs.getTabBarDepth())
+                                             .removeFromRight (300)
+                                             .reduced (2);
         Utils::doColumnLayout (buttonBounds, loadButton, saveButton);
     }
 
