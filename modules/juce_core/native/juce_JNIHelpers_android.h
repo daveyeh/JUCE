@@ -350,6 +350,7 @@ DECLARE_JNI_CLASS (AndroidContext, "android/content/Context")
  METHOD (startActivityForResult,               "startActivityForResult",          "(Landroid/content/Intent;I)V") \
  METHOD (getFragmentManager,                   "getFragmentManager",              "()Landroid/app/FragmentManager;") \
  METHOD (setContentView,                       "setContentView",                  "(Landroid/view/View;)V") \
+ METHOD (addContentView,                       "addContentView",                  "(Landroid/view/View;Landroid/view/ViewGroup$LayoutParams;)V") \
  METHOD (getActionBar,                         "getActionBar",                    "()Landroid/app/ActionBar;") \
  METHOD (getWindow,                            "getWindow",                       "()Landroid/view/Window;") \
  METHOD (isInMultiWindowMode,                  "isInMultiWindowMode",             "()Z") \
@@ -540,6 +541,7 @@ DECLARE_JNI_CLASS (AndroidPackageManager, "android/content/pm/PackageManager")
 
 #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
  METHOD (constructor,   "<init>",           "(I)V") \
+ METHOD (defaultConstructor, "<init>",      "()V") \
  METHOD (setColor,      "setColor",         "(I)V") \
  METHOD (setAlpha,      "setAlpha",         "(I)V") \
  METHOD (setTypeface,   "setTypeface",      "(Landroid/graphics/Typeface;)Landroid/graphics/Typeface;") \
@@ -563,6 +565,12 @@ DECLARE_JNI_CLASS (AndroidPaint, "android/graphics/Paint")
  METHOD (getClipBounds,   "getClipBounds",    "()Landroid/graphics/Rect;")
 
  DECLARE_JNI_CLASS (AndroidCanvas, "android/graphics/Canvas")
+#undef JNI_CLASS_MEMBERS
+
+#define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
+ METHOD (drawGlyphs, "drawGlyphs", "([II[FIILandroid/graphics/fonts/Font;Landroid/graphics/Paint;)V")
+
+ DECLARE_JNI_CLASS_WITH_MIN_SDK (AndroidCanvas31, "android/graphics/Canvas", 31)
 #undef JNI_CLASS_MEMBERS
 
 #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
@@ -672,7 +680,8 @@ DECLARE_JNI_CLASS (AndroidWindow, "android/view/Window")
 #undef JNI_CLASS_MEMBERS
 
 #define JNI_CLASS_MEMBERS(METHOD, STATICMETHOD, FIELD, STATICFIELD, CALLBACK) \
- METHOD (getDefaultDisplay, "getDefaultDisplay", "()Landroid/view/Display;")
+ METHOD (getDefaultDisplay, "getDefaultDisplay", "()Landroid/view/Display;") \
+ METHOD (removeViewImmediate, "removeViewImmediate", "(Landroid/view/View;)V") \
 
 DECLARE_JNI_CLASS (AndroidWindowManager, "android/view/WindowManager")
 #undef JNI_CLASS_MEMBERS
@@ -706,8 +715,10 @@ DECLARE_JNI_CLASS (JavaBoolean, "java/lang/Boolean")
   METHOD (remaining,  "remaining", "()I") \
   METHOD (hasArray,   "hasArray",  "()Z") \
   METHOD (array,      "array",     "()[B") \
+  METHOD (put,        "put",       "([B)Ljava/nio/ByteBuffer;") \
   METHOD (setOrder,   "order",     "(Ljava/nio/ByteOrder;)Ljava/nio/ByteBuffer;") \
-  STATICMETHOD (wrap, "wrap",      "([B)Ljava/nio/ByteBuffer;")
+  STATICMETHOD (wrap, "wrap",      "([B)Ljava/nio/ByteBuffer;") \
+  STATICMETHOD (allocateDirect, "allocateDirect", "(I)Ljava/nio/ByteBuffer;") \
 
 DECLARE_JNI_CLASS (JavaByteBuffer, "java/nio/ByteBuffer")
 #undef JNI_CLASS_MEMBERS
