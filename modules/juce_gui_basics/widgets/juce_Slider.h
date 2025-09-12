@@ -690,7 +690,7 @@ public:
         transparent window, so if you're using an OS that can't do transparent windows
         you'll have to add it to a parent component instead).
 
-        By default the popup display shown when hovering will remain visible for 2 seconds,
+        By default the popup display is shown when hovering will remain visible for 2 seconds,
         but it is possible to change this by passing a different hoverTimeout value. A
         value of -1 will cause the popup to remain until a mouseExit() occurs on the slider.
     */
@@ -1024,7 +1024,7 @@ public:
     std::unique_ptr<AccessibilityHandler> createAccessibilityHandler() override;
 
     //==============================================================================
-   #ifndef DOXYGEN
+    /** @cond */
     // These methods' bool parameters have changed: see the new method signature.
     [[deprecated]] void setValue (double, bool);
     [[deprecated]] void setValue (double, bool, bool);
@@ -1036,7 +1036,7 @@ public:
     [[deprecated]] void setMaxValue (double, bool);
     [[deprecated]] void setMinAndMaxValues (double, double, bool, bool);
     [[deprecated]] void setMinAndMaxValues (double, double, bool);
-   #endif
+    /** @endcond */
 
 private:
     //==============================================================================

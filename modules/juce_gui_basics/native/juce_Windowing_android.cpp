@@ -1308,7 +1308,8 @@ static constexpr int translateAndroidKeyboardFlags (int javaFlags) noexcept
 }
 
 //==============================================================================
-class AndroidComponentPeer final : public ComponentPeer
+class AndroidComponentPeer final : public ComponentPeer,
+                                   private ActivityLifecycleCallbacks
 {
 public:
     AndroidComponentPeer (Component& comp, int windowStyleFlags, void* nativeViewHandle)
@@ -1365,7 +1366,7 @@ public:
                                                           AndroidWindowManagerLayoutParams.createDefault) };
 
             if (Desktop::getInstance().getKioskModeComponent() != nullptr)
-                setNavBarsHidden (true);
+                refreshSystemBarsAndSetHidden (true);
 
             setUpLayoutParams (env, windowLayoutParams, physicalBounds);
 
@@ -1428,6 +1429,7 @@ public:
         frontWindow = nullptr;
 
         removeView();
+        setSystemBarsTransparent();
     }
 
     static void removeViewFromActivity (jobject localView)
@@ -1537,7 +1539,7 @@ public:
                     jassertfalse;
                 }
 
-                setNavBarsHidden (navBarsHidden);
+                refreshSystemBarsAndSetHidden (navBarsHidden);
             }
             else if (! fullScreen)
             {
@@ -1553,7 +1555,7 @@ public:
                                          view.get(),
                                          windowLayoutParams.get());
 
-                    setNavBarsHidden (navBarsHidden);
+                    refreshSystemBarsAndSetHidden (navBarsHidden);
                 }
                 else
                 {
@@ -1635,7 +1637,7 @@ public:
 
     void setFullScreen (bool shouldBeFullScreen) override
     {
-        setNavBarsHidden (shouldNavBarsBeHidden (shouldBeFullScreen));
+        refreshSystemBarsAndSetHidden (shouldNavBarsBeHidden (shouldBeFullScreen));
 
         auto newBounds = std::invoke ([&]
         {
@@ -1832,7 +1834,7 @@ public:
             handled = app->backButtonPressed();
 
         if (t.isKioskModeComponent())
-            t.setNavBarsHidden (t.navBarsHidden);
+            t.refreshSystemBarsAndSetHidden (t.navBarsHidden);
 
         if (! handled)
         {
@@ -1856,7 +1858,7 @@ public:
     static void handleAppResumedCallback (JNIEnv*, AndroidComponentPeer& t)
     {
         if (t.isKioskModeComponent())
-            t.setNavBarsHidden (t.navBarsHidden);
+            t.refreshSystemBarsAndSetHidden (t.navBarsHidden);
     }
 
     static jlong handleGetFocusedTextInputTargetCallback (JNIEnv*, AndroidComponentPeer& t)
@@ -2083,32 +2085,25 @@ public:
 
     void appStyleChanged() override
     {
-        setNavBarsHidden (navBarsHidden);
+        JUCE_ASSERT_MESSAGE_THREAD
+        refreshSystemBarsAndSetHidden (navBarsHidden);
     }
 
     //==============================================================================
-    static Point<float> lastMousePos;
-    static int64 touchesDown;
+    inline static Point<float> lastMousePos{};
+    inline static int64 touchesDown = 0;
 
     //==============================================================================
     struct StartupActivityCallbackListener final : public ActivityLifecycleCallbacks
     {
         void onActivityStarted (jobject /*activity*/) override
         {
-            auto* env = getEnv();
-            LocalRef<jobject> appContext (getAppContext());
+            forceDisplayUpdate();
 
-            if (appContext.get() != nullptr)
-            {
-                env->CallVoidMethod (appContext.get(),
-                                     AndroidApplication.unregisterActivityLifecycleCallbacks,
-                                     activityCallbackListener.get());
-                clear();
-                activityCallbackListener.clear();
-
-                forceDisplayUpdate();
-            }
+            AndroidComponentPeer::startupActivityCallbackListener.reset();
         }
+
+        ActivityLifecycleCallbackForwarder forwarder { GlobalRef { getAppContext() }, this };
     };
 
     class MainActivityWindowLayoutListener : public AndroidInterfaceImplementer
@@ -2484,7 +2479,7 @@ private:
         return (shouldBeFullScreen && isKioskModeComponent());
     }
 
-    void setNavBarsHidden (bool hidden)
+    void refreshSystemBarsAndSetHidden (bool hidden)
     {
         // The system may show the bars again, e.g when navigating away from the app and
         // back again. Therefore, we should call setSystemUiVisibilityCompat each time to
@@ -2495,6 +2490,25 @@ private:
                                   activityWindow.get(),
                                   (jboolean) ! navBarsHidden,
                                   (jboolean) (getAppStyle() == Style::light));
+
+        setSystemBarsTransparent();
+    }
+
+    void setSystemBarsTransparent()
+    {
+        if (activityWindow == nullptr)
+            return;
+
+        auto* env = getEnv();
+
+        constexpr jint fullyTransparent = 0;
+        env->CallVoidMethod (activityWindow, AndroidWindow.setStatusBarColor, fullyTransparent);
+        env->CallVoidMethod (activityWindow, AndroidWindow.setNavigationBarColor, fullyTransparent);
+
+        env->CallVoidMethod (activityWindow, AndroidWindow.setFlags, FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS, FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS);
+
+        if (getAndroidSDKVersion() >= 29)
+            env->CallVoidMethod (activityWindow, AndroidWindow29.setNavigationBarContrastEnforced, (jboolean) false);
     }
 
     template <typename Callback>
@@ -2508,8 +2522,8 @@ private:
 
     //==============================================================================
     friend class Displays;
-    static AndroidComponentPeer* frontWindow;
-    static GlobalRef activityCallbackListener;
+    inline static AndroidComponentPeer* frontWindow = nullptr;
+    inline static std::optional<StartupActivityCallbackListener> startupActivityCallbackListener;
 
     static constexpr jint GRAVITY_LEFT = 0x3, GRAVITY_TOP = 0x30;
     static constexpr jint TYPE_APPLICATION = 0x2;
@@ -2529,11 +2543,6 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AndroidComponentPeer)
 };
 
-Point<float> AndroidComponentPeer::lastMousePos;
-int64 AndroidComponentPeer::touchesDown = 0;
-AndroidComponentPeer* AndroidComponentPeer::frontWindow = nullptr;
-GlobalRef AndroidComponentPeer::activityCallbackListener;
-
 //==============================================================================
 ComponentPeer* Component::createNewPeer (int styleFlags, void* nativeWindow)
 {
@@ -2546,52 +2555,32 @@ bool Desktop::canUseSemiTransparentWindows() noexcept
     return true;
 }
 
-class Desktop::NativeDarkModeChangeDetectorImpl  : public ActivityLifecycleCallbacks
+class Desktop::NativeDarkModeChangeDetectorImpl  : private ActivityLifecycleCallbacks
 {
 public:
-    NativeDarkModeChangeDetectorImpl()
-    {
-        LocalRef<jobject> appContext (getAppContext());
-
-        if (appContext != nullptr)
-        {
-            auto* env = getEnv();
-
-            myself = GlobalRef (CreateJavaInterface (this, "android/app/Application$ActivityLifecycleCallbacks"));
-            env->CallVoidMethod (appContext.get(), AndroidApplication.registerActivityLifecycleCallbacks, myself.get());
-        }
-    }
-
-    ~NativeDarkModeChangeDetectorImpl() override
-    {
-        LocalRef<jobject> appContext (getAppContext());
-
-        if (appContext != nullptr && myself != nullptr)
-        {
-            auto* env = getEnv();
-
-            env->CallVoidMethod (appContext.get(),
-                                 AndroidApplication.unregisterActivityLifecycleCallbacks,
-                                 myself.get());
-            clear();
-            myself.clear();
-        }
-    }
+    NativeDarkModeChangeDetectorImpl() = default;
 
     bool isDarkModeEnabled() const noexcept  { return darkModeEnabled; }
 
-    void onActivityStarted (jobject /*activity*/) override
+private:
+    void onActivityStarted (jobject) override
     {
-        const auto isEnabled = getDarkModeSetting();
-
-        if (darkModeEnabled != isEnabled)
-        {
-            darkModeEnabled = isEnabled;
-            Desktop::getInstance().darkModeChanged();
-        }
+        updateMode();
     }
 
-private:
+    void onActivityConfigurationChanged (jobject) override
+    {
+        updateMode();
+    }
+
+    void updateMode()
+    {
+        const auto current = getDarkModeSetting();
+
+        if (std::exchange (darkModeEnabled, current) != current)
+            Desktop::getInstance().darkModeChanged();
+    }
+
     static bool getDarkModeSetting()
     {
         auto* env = getEnv();
@@ -2609,8 +2598,8 @@ private:
                          UI_MODE_NIGHT_UNDEFINED = 0x00000000,
                          UI_MODE_NIGHT_YES       = 0x00000020;
 
-    GlobalRef myself;
     bool darkModeEnabled = getDarkModeSetting();
+    ActivityLifecycleCallbackForwarder forwarder { GlobalRef { getAppContext() }, this };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NativeDarkModeChangeDetectorImpl)
@@ -2956,20 +2945,9 @@ void Displays::findDisplays (float masterScale)
             }
         }
     }
-    else if (AndroidComponentPeer::activityCallbackListener == nullptr)
+    else if (! AndroidComponentPeer::startupActivityCallbackListener.has_value())
     {
-        LocalRef<jobject> appContext (getAppContext());
-
-        if (appContext.get() != nullptr)
-        {
-            AndroidComponentPeer::activityCallbackListener = GlobalRef (CreateJavaInterface (
-                    new AndroidComponentPeer::StartupActivityCallbackListener,
-                    "android/app/Application$ActivityLifecycleCallbacks"));
-
-            env->CallVoidMethod (appContext,
-                                 AndroidApplication.registerActivityLifecycleCallbacks,
-                                 AndroidComponentPeer::activityCallbackListener.get());
-        }
+        AndroidComponentPeer::startupActivityCallbackListener.emplace();
     }
 
     displays.add (d);
