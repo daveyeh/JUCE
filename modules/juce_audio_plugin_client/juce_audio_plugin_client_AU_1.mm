@@ -2595,28 +2595,35 @@ private:
 
         if (AudioProcessor::Bus* bus = juceFilter->getBus (isInput, busNum))
         {
+            // [AIX patch] Restrict the per-format layout list to layouts whose channel count
+            // matches the bus's current format. auvaltool checks per-format; bus->isLayoutSupported
+            // accepts a mono layout on a stereo bus because mono is reachable via a multi-bus
+            // reconfiguration, which auvaltool flags as a numChannels mismatch.
+            const int currentChannelCount = bus->getCurrentLayout().size();
+
            #ifndef JucePlugin_PreferredChannelConfigurations
             auto& knownTags = CoreAudioLayouts::getKnownCoreAudioTags();
 
             for (auto tag : knownTags)
-                if (bus->isLayoutSupported (CoreAudioLayouts::fromCoreAudio (tag)))
+            {
+                const auto set = CoreAudioLayouts::fromCoreAudio (tag);
+                if (set.size() != currentChannelCount)
+                    continue;
+                if (bus->isLayoutSupported (set))
                     tags.insert (tag);
+            }
            #endif
 
-            // add discrete layout tags
-            int n = bus->getMaxSupportedChannels (maxChannelsToProbeFor());
-
-            for (int ch = 0; ch < n; ++ch)
-            {
-               #ifdef JucePlugin_PreferredChannelConfigurations
-                const short configs[][2] = { JucePlugin_PreferredChannelConfigurations };
-                if (AudioUnitHelpers::isLayoutSupported (*juceFilter, isInput, busNum, ch, configs))
-                    tags.insert (static_cast<AudioChannelLayoutTag> ((int) kAudioChannelLayoutTag_DiscreteInOrder | ch));
-               #else
-                if (bus->isLayoutSupported (AudioChannelSet::discreteChannels (ch)))
-                    tags.insert (static_cast<AudioChannelLayoutTag> ((int) kAudioChannelLayoutTag_DiscreteInOrder | ch));
-               #endif
-            }
+            // discrete layout tag for the current channel count only
+            const int ch = currentChannelCount;
+           #ifdef JucePlugin_PreferredChannelConfigurations
+            const short configs[][2] = { JucePlugin_PreferredChannelConfigurations };
+            if (AudioUnitHelpers::isLayoutSupported (*juceFilter, isInput, busNum, ch, configs))
+                tags.insert (static_cast<AudioChannelLayoutTag> ((int) kAudioChannelLayoutTag_DiscreteInOrder | ch));
+           #else
+            if (bus->isLayoutSupported (AudioChannelSet::discreteChannels (ch)))
+                tags.insert (static_cast<AudioChannelLayoutTag> ((int) kAudioChannelLayoutTag_DiscreteInOrder | ch));
+           #endif
         }
 
         return std::vector<AudioChannelLayoutTag> (tags.begin(), tags.end());
