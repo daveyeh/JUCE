@@ -4,15 +4,20 @@ Local modifications applied on top of upstream JUCE. Re-apply after a JUCE upgra
 
 ## modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
 
-**`getSupportedLayoutTagsForBus` — filter by current bus channel count.**
+**`getSupportedLayoutTagsForBus` — restrict only the `DiscreteInOrder` tag to the current
+bus channel count.**
 
-Stock JUCE returns every layout the bus could be configured into across any multi-bus
-reconfiguration. Apple's `auvaltool` evaluates the layout list per-format and reports
-`Mismatch between reported channel layouts and reported numChannels` when, e.g., a Mono
-tag appears in a stereo bus's list. The patch restricts the returned tags (both the named
-CoreAudio tags and the `DiscreteInOrder` tag) to those whose channel count matches
-`bus->getCurrentLayout().size()`. Mono/stereo support is preserved at the AUChannelInfo
-and StreamFormat level; only the per-format layout query is filtered.
+Apple's `auvaltool` reports `Mismatch between reported channel layouts and reported
+numChannels` when `DiscreteInOrder` tags for other channel counts appear in the bus's
+layout list; stock JUCE emits them for every count up to the bus maximum. The patch emits
+the `DiscreteInOrder` tag only for `bus->getCurrentLayout().size()`.
+
+The named CoreAudio tags (Mono, Stereo, …) are deliberately left unfiltered, exactly as
+stock JUCE publishes them. An earlier version of this patch filtered those too, which
+broke Mono/Dual Mono insertion in Logic (reported against Drum EQ 2.0.15): Logic consults
+the published layout list when inserting the mono variants, and the Mono tag was missing
+because the bus's default format is stereo. AUChannelInfo alone is not sufficient for
+Logic — the Mono named tag must be present.
 
 Marker: search for `[AIX patch]` in the file.
 

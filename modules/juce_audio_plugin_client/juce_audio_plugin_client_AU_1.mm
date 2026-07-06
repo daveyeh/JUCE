@@ -2595,23 +2595,18 @@ private:
 
         if (AudioProcessor::Bus* bus = juceFilter->getBus (isInput, busNum))
         {
-            // [AIX patch] Restrict the per-format layout list to layouts whose channel count
-            // matches the bus's current format. auvaltool checks per-format; bus->isLayoutSupported
-            // accepts a mono layout on a stereo bus because mono is reachable via a multi-bus
-            // reconfiguration, which auvaltool flags as a numChannels mismatch.
+            // [AIX patch] Named tags must stay unfiltered: Logic checks the published layout list
+            // when inserting the Mono/Dual Mono variants, so the Mono tag has to be present even
+            // while the bus's current format is stereo. Only the DiscreteInOrder tag below is
+            // restricted to the current channel count (auvaltool's numChannels-mismatch complaint).
             const int currentChannelCount = bus->getCurrentLayout().size();
 
            #ifndef JucePlugin_PreferredChannelConfigurations
             auto& knownTags = CoreAudioLayouts::getKnownCoreAudioTags();
 
             for (auto tag : knownTags)
-            {
-                const auto set = CoreAudioLayouts::fromCoreAudio (tag);
-                if (set.size() != currentChannelCount)
-                    continue;
-                if (bus->isLayoutSupported (set))
+                if (bus->isLayoutSupported (CoreAudioLayouts::fromCoreAudio (tag)))
                     tags.insert (tag);
-            }
            #endif
 
             // discrete layout tag for the current channel count only
