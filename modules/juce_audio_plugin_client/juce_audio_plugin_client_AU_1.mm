@@ -2595,18 +2595,40 @@ private:
 
         if (AudioProcessor::Bus* bus = juceFilter->getBus (isInput, busNum))
         {
-            // [AIX patch] Named tags must stay unfiltered: Logic checks the published layout list
-            // when inserting the Mono/Dual Mono variants, so the Mono tag has to be present even
-            // while the bus's current format is stereo. Only the DiscreteInOrder tag below is
-            // restricted to the current channel count (auvaltool's numChannels-mismatch complaint).
+            // [AIX patch] Publish a named layout tag only if the bus supports it AND its channel
+            // count appears in the AU's reported channel capabilities (channelInfo) for this
+            // direction. Publishing every reachable layout fails auval on sidechain plugins whose
+            // mono main layout needs other buses reconfigured (caps say [2,2] but Mono gets
+            // published); filtering to the bus's current format instead hides Mono from Logic's
+            // Mono/Dual Mono insertion. Negative capability entries are wildcards.
             const int currentChannelCount = bus->getCurrentLayout().size();
+
+            const auto countAdvertised = [this, isInput] (int numChannels)
+            {
+                if (channelInfo.isEmpty())
+                    return true;
+
+                for (const auto& info : channelInfo)
+                {
+                    const int count = isInput ? info.inChannels : info.outChannels;
+
+                    if (count < 0 || count == numChannels)
+                        return true;
+                }
+
+                return false;
+            };
 
            #ifndef JucePlugin_PreferredChannelConfigurations
             auto& knownTags = CoreAudioLayouts::getKnownCoreAudioTags();
 
             for (auto tag : knownTags)
-                if (bus->isLayoutSupported (CoreAudioLayouts::fromCoreAudio (tag)))
+            {
+                const auto set = CoreAudioLayouts::fromCoreAudio (tag);
+
+                if (countAdvertised (set.size()) && bus->isLayoutSupported (set))
                     tags.insert (tag);
+            }
            #endif
 
             // discrete layout tag for the current channel count only

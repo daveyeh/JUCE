@@ -4,20 +4,30 @@ Local modifications applied on top of upstream JUCE. Re-apply after a JUCE upgra
 
 ## modules/juce_audio_plugin_client/juce_audio_plugin_client_AU_1.mm
 
-**`getSupportedLayoutTagsForBus` — restrict only the `DiscreteInOrder` tag to the current
-bus channel count.**
+**`getSupportedLayoutTagsForBus` — align the published layout-tag list with the AU's
+reported channel capabilities (`channelInfo`).**
 
-Apple's `auvaltool` reports `Mismatch between reported channel layouts and reported
-numChannels` when `DiscreteInOrder` tags for other channel counts appear in the bus's
-layout list; stock JUCE emits them for every count up to the bus maximum. The patch emits
-the `DiscreteInOrder` tag only for `bus->getCurrentLayout().size()`.
+Named CoreAudio tags (Mono, Stereo, …) are published for a layout the bus supports
+*only if* its channel count appears in the AU's reported channel capabilities
+(AUChannelInfo) for that direction; negative capability entries are wildcards and lift
+the restriction. The `DiscreteInOrder` tag is emitted only for
+`bus->getCurrentLayout().size()`.
 
-The named CoreAudio tags (Mono, Stereo, …) are deliberately left unfiltered, exactly as
-stock JUCE publishes them. An earlier version of this patch filtered those too, which
-broke Mono/Dual Mono insertion in Logic (reported against Drum EQ 2.0.15): Logic consults
-the published layout list when inserting the mono variants, and the Mono tag was missing
-because the bus's default format is stereo. AUChannelInfo alone is not sufficient for
-Logic — the Mono named tag must be present.
+Why not the two simpler behaviours:
+
+- *Stock JUCE* publishes every layout reachable via any multi-bus reconfiguration. On
+  plugins where a mono main bus is only valid after also reconfiguring a sidechain
+  (Intuition, Multi-Band Gate), that publishes Mono while AUChannelInfo says `[2,2]`
+  only, and `auvaltool` fails with `Mismatch between reported channel layouts and
+  reported numChannels`.
+- *Filtering to the bus's current channel count* (the first version of this patch)
+  passes auval but broke Mono/Dual Mono insertion in Logic for every simple mono/stereo
+  plugin (reported against Drum EQ 2.0.15): the default format is stereo, so the Mono
+  tag was never published, and Logic consults this list when inserting mono variants —
+  AUChannelInfo `[1,1]` alone is not sufficient.
+
+Keying the list to AUChannelInfo gives both: plugins that advertise `[1,1]` publish Mono
+(Logic mono works), plugins that only advertise `[2,2]` don't (auval stays consistent).
 
 Marker: search for `[AIX patch]` in the file.
 
